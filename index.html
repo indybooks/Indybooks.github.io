@@ -131,12 +131,19 @@
             </div>
 
             <div class="flex items-center space-x-3 ml-3">
-                <button id="sloth-mode-btn" onclick="toggleSlothMode()" title="Sloth Mode (0.5x Claw Speed)" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-[#EB8861] flex items-center justify-center transition">
-                    <svg viewBox="0 0 100 100" class="w-5 h-5 fill-current">
-                        <path d="M20 55 C20 45, 30 40, 45 42 C50 43, 55 48, 55 55 C55 65, 45 75, 32 75 C25 75, 20 68, 20 55 Z" fill="#EB8861"/>
-                        <path d="M35 25 L25 45 L35 48 Z" fill="#EB8861"/>
-                        <path d="M50 20 L42 42 L52 46 Z" fill="#EB8861"/>
-                        <path d="M68 28 L58 45 L68 50 Z" fill="#EB8861"/>
+<button id="sloth-mode-btn" onclick="toggleSlothMode()" title="Sloth Mode (0.5x Claw Speed)" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-[#EB8861] flex items-center justify-center transition">
+                    <svg viewBox="0 0 100 100" class="w-5 h-5 stroke-current stroke-[6] fill-none stroke-linecap-round stroke-linejoin-round">
+                        <!-- Tree Branch -->
+                        <path d="M10 25 Q50 15 90 28" />
+                        <!-- Hanging Sloth Body & Limbs -->
+                        <path d="M35 25 C25 30 25 50 35 60 C45 70 65 70 75 60 C85 50 85 30 75 25" />
+                        <path d="M35 25 C30 35 35 45 40 45" />
+                        <path d="M75 25 C80 35 75 45 70 45" />
+                        <!-- Face / Smile -->
+                        <circle cx="55" cy="45" r="12" />
+                        <path d="M50 52 Q55 58 60 52" />
+                        <circle cx="50" cy="42" r="2" fill="currentColor" />
+                        <circle cx="60" cy="42" r="2" fill="currentColor" />
                     </svg>
                 </button>
                 <button onclick="skipTime(-15)" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition">
