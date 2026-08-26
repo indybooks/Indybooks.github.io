@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<!-- user-scalable=no removed: blocking pinch-zoom fails WCAG 1.4.4 -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>IndyBooks — Podcast &amp; Audiobook Hub</title>
+<meta name="description" content="A local-first hub for podcasts and audiobooks, with optional cloud sync.">
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2B4C6D">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="IndyBooks">
+
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+<style>
+/* =====================================================================
+   The original loaded the Tailwind *browser* build, which compiles CSS at
+   runtime on every page load. That caused a flash of unstyled content and
+   several hundred ms of main-thread work before first paint. The same
+   design is expressed here as static CSS.
+   ===================================================================== */
+
+:root{
+  --sky:#C3D7EA; --captain:#4173B0; --navy:#2B4C6D;
+  --rose:#EABCB5; --poppy:#EB8861; --sunshine:#EDCE7A;
+  --bg:#F8F9FA; --surface:#fff; --line:#E9EDF2;
+  --text:#2B4C6D; --muted:#6B7B8C;
+  --radius:16px; --radius-sm:12px;
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --player-h:84px;
+  --shadow:0 1px 2px rgba(43,76,109,.06),0 4px 16px rgba(43,76,109,.06);
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:16px;line-height:1.45;
+  display:flex;flex-direction:column;overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+/* Scoped to controls only. The original disabled selection document-wide,
+   so users could not copy a title or a URL anywhere in the app. */
+button,.folder-head,.item__main{user-select:none;-webkit-user-select:none}
+
+h1,h2,h3,h4,p{margin:0}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+img{display:block;max-width:100%}
+.hidden{display:none !important}
+
+:focus-visible{outline:2px solid var(--sunshine);outline-offset:2px;border-radius:6px}
+
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--sky);border-radius:4px}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;transition-duration:.01ms !important}
+}
+
+/* ---------- Header ---------- */
+.header{
+  background:var(--navy);color:#fff;flex-shrink:0;
+  padding:calc(12px + var(--safe-t)) 16px 12px;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  box-shadow:0 2px 8px rgba(43,76,109,.18);
+}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.brand__icon{
+  width:40px;height:40px;border-radius:12px;flex-shrink:0;overflow:hidden;
+  border:2px solid rgba(255,255,255,.25);background:var(--sky);
+}
+.brand__name{font-size:18px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.brand__sub{font-size:12px;color:var(--sky);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{font-size:10px;background:var(--poppy);color:#fff;padding:2px 7px;border-radius:999px;font-weight:600}
+.badge--synced{background:#15803d}
+.header__actions{display:flex;gap:8px;flex-shrink:0}
+
+.icon-btn{
+  width:36px;height:36px;border-radius:999px;flex-shrink:0;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,.12);color:#fff;transition:background .15s;
+}
+.icon-btn:hover{background:rgba(255,255,255,.24)}
+.icon-btn--sm{width:32px;height:32px;background:transparent;color:var(--muted);font-size:13px}
+.icon-btn--sm:hover{background:var(--line);color:var(--navy)}
+
+/* ---------- Main ---------- */
+.main{
+  flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding:16px 16px calc(var(--player-h) + var(--safe-b) + 24px);
+}
+.toolbar{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:16px}
+@media(min-width:640px){.toolbar{grid-template-columns:repeat(5,1fr)}}
+.tool{
+  background:var(--captain);color:#fff;border-radius:var(--radius);
+  padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:4px;
+  font-size:12px;font-weight:600;box-shadow:var(--shadow);transition:background .15s;
+}
+.tool:hover{background:var(--navy)}
+.tool i{font-size:14px;color:var(--sunshine)}
+.tool--accent{background:var(--poppy)}
+.tool--accent:hover{background:#d5734c}
+.tool--accent i{color:#fff}
+.tool--wide{grid-column:span 2}
+@media(min-width:640px){.tool--wide{grid-column:span 1}}
+
+.library{display:flex;flex-direction:column;gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+
+.folder-head{
+  width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:10px 14px;background:#FAFBFC;border-bottom:1px solid var(--line);text-align:left;
+}
+.folder-head--static{cursor:default}
+.folder-head__label{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;min-width:0}
+.folder-head__label i{color:var(--captain)}
+.folder-head__count{font-size:12px;color:var(--muted);font-weight:400}
+.folder-head__actions{display:flex;align-items:center;gap:4px;color:var(--muted);font-size:12px}
+.folder-head__chevron{width:12px}
+
+.item-list{display:flex;flex-direction:column}
+.item-list>.item+.item{border-top:1px solid var(--line)}
+.item-list__empty{padding:14px;text-align:center;font-size:12px;color:var(--muted);font-style:italic}
+
+.item{display:flex;align-items:center;gap:4px;padding:10px 8px 10px 12px;transition:background .12s}
+.item:hover{background:#FAFBFC}
+.item--current{background:rgba(195,215,234,.28);box-shadow:inset 3px 0 0 var(--captain)}
+.item__main{display:flex;align-items:center;gap:12px;flex:1;min-width:0;text-align:left;padding:0}
+.item__cover{
+  width:48px;height:48px;border-radius:12px;flex-shrink:0;overflow:hidden;background:var(--line);
+  display:flex;align-items:center;justify-content:center;color:var(--muted);
+}
+.item__cover img{width:100%;height:100%;object-fit:cover}
+.item__body{min-width:0;flex:1;display:flex;flex-direction:column;gap:4px}
+.item__title{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item__meta{display:flex;align-items:center;gap:8px}
+.item__stats{font-size:10px;color:var(--muted);white-space:nowrap}
+.item__tags{display:flex;flex-wrap:wrap;gap:4px}
+
+.progress{flex:1;max-width:120px;height:5px;border-radius:999px;background:var(--line);overflow:hidden}
+.progress__fill{display:block;height:100%;background:var(--captain);border-radius:999px}
+
+.tag{font-size:10px;background:var(--line);color:var(--captain);padding:2px 6px;border-radius:6px;font-weight:600}
+.tag--button{background:rgba(195,215,234,.45);color:var(--navy);padding:4px 9px;border-radius:8px}
+.tag--button:hover{background:var(--sky)}
+.tag--button span{opacity:.6;font-weight:400}
+
+.empty-state{
+  text-align:center;padding:56px 20px;background:var(--surface);
+  border:1px dashed #D3DBE4;border-radius:var(--radius);
+}
+.empty-state__icon{
+  width:64px;height:64px;margin:0 auto 12px;border-radius:999px;font-size:24px;
+  background:rgba(195,215,234,.4);color:var(--captain);
+  display:flex;align-items:center;justify-content:center;
+}
+.empty-state h2{font-size:16px;font-weight:700}
+.empty-state p{font-size:12px;color:var(--muted);margin-top:6px;max-width:22rem;margin-inline:auto}
+.hint{font-size:11px;color:var(--muted);font-style:italic}
+
+/* ---------- Mini player ---------- */
+.mini{
+  position:fixed;left:0;right:0;bottom:0;z-index:40;
+  background:var(--navy);color:#fff;border-top:1px solid rgba(255,255,255,.1);
+  padding-bottom:var(--safe-b);box-shadow:0 -4px 24px rgba(43,76,109,.25);
+}
+.mini__track{height:6px;background:rgba(255,255,255,.2);cursor:pointer;position:relative}
+.mini__track::after{content:"";position:absolute;inset:-6px 0;}
+.mini__fill{display:block;height:100%;width:0;background:var(--sunshine);transition:width .15s linear}
+.mini__row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px}
+.mini__info{display:flex;align-items:center;gap:12px;flex:1;min-width:0;text-align:left;padding:0}
+.mini__cover{
+  width:48px;height:48px;border-radius:12px;flex-shrink:0;overflow:hidden;background:var(--captain);
+  display:flex;align-items:center;justify-content:center;color:var(--sky);font-size:20px;
+}
+.mini__cover img{width:100%;height:100%;object-fit:cover}
+.mini__text{min-width:0}
+.mini__title{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini__sub{font-size:12px;color:var(--sky);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini__controls{display:flex;align-items:center;gap:8px;flex-shrink:0}
+
+.play-btn{
+  width:44px;height:44px;border-radius:999px;background:var(--sunshine);color:var(--navy);
+  display:flex;align-items:center;justify-content:center;font-size:15px;
+  box-shadow:0 4px 12px rgba(0,0,0,.2);transition:transform .12s;
+}
+.play-btn:hover{transform:scale(1.06)}
+.play-btn--lg{width:64px;height:64px;font-size:22px}
+.sloth-btn{color:var(--poppy)}
+.sloth-btn.is-active{background:rgba(255,255,255,.35);box-shadow:0 0 0 2px var(--poppy)}
+.sloth-btn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
+@media(max-width:420px){.mini__controls .optional-control{display:none}}
+
+/* ---------- Full player sheet ---------- */
+.sheet{
+  position:fixed;inset:0;z-index:60;background:var(--navy);color:#fff;
+  display:flex;flex-direction:column;
+  transform:translateY(100%);transition:transform .3s ease;
+  visibility:hidden;
+}
+.sheet.is-open{transform:translateY(0);visibility:visible}
+.sheet__bar{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:calc(14px + var(--safe-t)) 16px 14px;border-bottom:1px solid rgba(255,255,255,.1);
+}
+.sheet__eyebrow{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--sunshine);font-weight:700}
+.sheet__body{
+  flex:1;overflow-y:auto;padding:24px;
+  display:flex;flex-direction:column;align-items:center;gap:22px;
+  padding-bottom:calc(24px + var(--safe-b));
+}
+.sheet__cover{
+  width:min(256px,70vw);aspect-ratio:1;border-radius:20px;background:var(--captain);
+  border:4px solid rgba(255,255,255,.1);overflow:hidden;
+  display:flex;align-items:center;justify-content:center;font-size:56px;color:var(--sky);
+  box-shadow:0 20px 50px rgba(0,0,0,.35);
+}
+.sheet__cover img{width:100%;height:100%;object-fit:cover}
+.sheet__meta{text-align:center;width:100%;max-width:28rem}
+.sheet__title{font-size:20px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sheet__sub{font-size:14px;color:var(--sky);margin-top:2px}
+.sheet__stats{display:flex;justify-content:center;gap:10px;margin-top:10px;font-size:12px;color:var(--sky)}
+.seek{width:100%;max-width:28rem}
+.seek__labels{display:flex;justify-content:space-between;font-size:12px;color:var(--sky);margin-top:2px}
+.transport{display:flex;align-items:center;justify-content:center;gap:16px;width:100%;max-width:28rem}
+.transport__round{
+  width:48px;height:48px;border-radius:999px;background:rgba(255,255,255,.12);
+  display:flex;align-items:center;justify-content:center;
+}
+.transport__round:hover{background:rgba(255,255,255,.22)}
+.stack{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--sky)}
+.stack__icon{width:40px;height:40px;border-radius:999px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center}
+.stack .stack__icon{color:var(--sunshine)}
+.stack.is-active .stack__icon{background:rgba(255,255,255,.32);box-shadow:0 0 0 2px var(--poppy)}
+.chips{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px;width:100%;max-width:28rem}
+.chip{background:rgba(255,255,255,.12);border-radius:14px;padding:8px 14px;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--sky)}
+.chip button{width:26px;height:26px;border-radius:8px;background:rgba(255,255,255,.12);color:#fff;font-weight:700}
+.chip button:hover{background:rgba(255,255,255,.24)}
+.chip__value{font-size:14px;font-weight:700;color:var(--sunshine);min-width:42px;text-align:center}
+.chip--action:hover{background:rgba(255,255,255,.22)}
+
+.count-badge{
+  position:absolute;top:-3px;right:-3px;min-width:18px;height:18px;padding:0 4px;
+  background:var(--poppy);color:#fff;font-size:10px;font-weight:700;border-radius:999px;
+  display:flex;align-items:center;justify-content:center;
+}
+
+input[type=range]{
+  -webkit-appearance:none;appearance:none;width:100%;height:20px;background:transparent;cursor:pointer;
+}
+input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:999px;background:rgba(255,255,255,.25)}
+input[type=range]::-moz-range-track{height:5px;border-radius:999px;background:rgba(255,255,255,.25)}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:16px;height:16px;border-radius:999px;background:var(--sunshine);
+  margin-top:-5.5px;box-shadow:0 1px 4px rgba(0,0,0,.35);
+}
+input[type=range]::-moz-range-thumb{width:16px;height:16px;border:0;border-radius:999px;background:var(--sunshine)}
+input[type=range]:disabled{opacity:.4;cursor:not-allowed}
+.volume-slider{width:88px}
+
+/* ---------- Dialogs ---------- */
+.modal{
+  position:fixed;inset:0;z-index:70;background:rgba(15,30,45,.55);
+  display:flex;align-items:center;justify-content:center;padding:16px;
+  opacity:0;visibility:hidden;transition:opacity .18s;
+}
+.modal.is-open{opacity:1;visibility:visible}
+.modal--top{z-index:80}
+.modal__panel{
+  background:var(--surface);border-radius:20px;width:100%;max-width:28rem;
+  padding:22px;box-shadow:0 24px 60px rgba(15,30,45,.3);
+  max-height:88vh;overflow-y:auto;display:flex;flex-direction:column;gap:14px;
+  transform:translateY(8px);transition:transform .18s;
+}
+.modal.is-open .modal__panel{transform:translateY(0)}
+.modal__head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.modal__head h2{font-size:17px;font-weight:700}
+.modal__note{font-size:12px;color:var(--muted)}
+.modal__section{padding-top:12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.modal__row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:12px;border-top:1px solid var(--line)}
+.modal__row span{font-size:12px;color:var(--muted);font-weight:500}
+.modal__actions{display:flex;justify-content:flex-end;gap:8px;padding-top:4px}
+
+.field{display:flex;flex-direction:column;gap:5px}
+.field label,.field-label{font-size:12px;font-weight:600;color:var(--muted)}
+.field input,.field select{
+  width:100%;border:1px solid #D6DEE7;border-radius:12px;padding:9px 12px;font-size:14px;
+  color:var(--text);background:#fff;
+}
+.field input:focus,.field select:focus{outline:none;border-color:var(--captain);box-shadow:0 0 0 3px rgba(65,115,176,.15)}
+
+.btn{border-radius:12px;padding:9px 18px;font-size:12px;font-weight:600;transition:background .15s}
+.btn--sm{padding:5px 12px}
+.btn--block{width:100%;padding:11px}
+.btn--primary{background:var(--captain);color:#fff;box-shadow:var(--shadow)}
+.btn--primary:hover{background:var(--navy)}
+.btn--dark{background:var(--navy);color:#fff}
+.btn--ghost{background:var(--line);color:var(--navy)}
+.btn--ghost:hover{background:#DCE3EA}
+.btn--quiet{color:var(--muted)}
+.btn--quiet:hover{background:var(--line)}
+.btn--danger{background:#FEE2E2;color:#B91C1C}
+.btn--danger:hover{background:#FECACA}
+.btn--soft{background:var(--sky);color:var(--navy)}
+.btn--soft:hover{background:#B2C8DE}
+.btn[disabled]{opacity:.55;pointer-events:none}
+.btn-row{display:flex;gap:8px}
+.btn-row>*{flex:1}
+
+.status{padding:12px;border-radius:12px;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.status--ok{background:#F0FDF4;color:#166534}
+.status--info{background:rgba(195,215,234,.35);color:var(--navy)}
+.status strong{display:block}
+.status small{font-size:10px;opacity:.8}
+
+.file-input{font-size:12px;color:var(--muted);width:100%}
+.file-input::file-selector-button{
+  margin-right:12px;border:0;border-radius:12px;padding:8px 14px;
+  font-size:12px;font-weight:600;background:var(--sky);color:var(--navy);cursor:pointer;
+}
+
+.sleep-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sleep-grid .btn{background:var(--line);color:var(--navy);padding:14px;font-size:14px}
+.sleep-grid .btn:hover{background:var(--sky)}
+
+.bookmark{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.bookmark:first-child{border-top:0}
+.bookmark__title{font-size:12px;font-weight:700}
+.bookmark__time{font-size:10px;color:var(--muted)}
+.bookmark__actions{display:flex;align-items:center;gap:4px}
+.scroll-list{overflow-y:auto;max-height:52vh}
+
+.result{
+  width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:9px 10px;border-radius:12px;text-align:left;
+}
+.result:hover{background:#FAFBFC}
+.result__title{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.result__folder{font-size:10px;color:var(--muted);flex-shrink:0}
+
+/* ---------- Toast ---------- */
+.toast{
+  position:fixed;left:50%;bottom:calc(var(--player-h) + var(--safe-b) + 16px);
+  transform:translate(-50%,16px);z-index:90;
+  max-width:min(90vw,26rem);padding:11px 18px;border-radius:999px;
+  background:var(--navy);color:#fff;font-size:13px;font-weight:500;text-align:center;
+  box-shadow:0 8px 30px rgba(15,30,45,.3);
+  opacity:0;visibility:hidden;transition:opacity .2s,transform .2s;
+}
+.toast--visible{opacity:1;visibility:visible;transform:translate(-50%,0)}
+.toast--success{background:#166534}
+.toast--error{background:#B91C1C}
+
+/* ---------- Update banner ---------- */
+.update-banner{
+  position:fixed;left:50%;top:calc(var(--safe-t) + 12px);transform:translate(-50%,-140%);
+  z-index:95;display:flex;align-items:center;gap:12px;
+  max-width:min(92vw,30rem);padding:10px 10px 10px 18px;border-radius:999px;
+  background:var(--captain);color:#fff;font-size:13px;font-weight:500;
+  box-shadow:0 10px 34px rgba(15,30,45,.35);
+  opacity:0;visibility:hidden;transition:opacity .22s,transform .22s;
+}
+.update-banner.is-visible{opacity:1;visibility:visible;transform:translate(-50%,0)}
+.update-banner__actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.update-banner .icon-btn--sm{color:rgba(255,255,255,.75)}
+.update-banner .icon-btn--sm:hover{background:rgba(255,255,255,.18);color:#fff}
+
+/* ---------- Offline state ---------- */
+.is-offline .badge::after{content:" · offline";font-weight:400;opacity:.85}
+.is-offline .tool[data-action="open-add-feed"]{opacity:.5;pointer-events:none}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="brand">
+    <div class="brand__icon" aria-hidden="true">
+      <svg viewBox="0 0 100 100" width="40" height="40">
+        <circle cx="50" cy="50" r="50" fill="#C3D7EA"/>
+        <path d="M30 45 C30 30, 70 30, 70 45 L75 75 C75 85, 25 85, 25 75 Z" fill="#fff"/>
+        <path d="M32 35 L20 15 L38 28 Z" fill="#fff"/>
+        <path d="M68 35 C75 30, 85 45, 78 60 L72 50 Z" fill="#fff" stroke="#dcdcdc" stroke-width="2"/>
+        <circle cx="42" cy="45" r="4" fill="#1e293b"/>
+        <circle cx="58" cy="45" r="4" fill="#1e293b"/>
+        <ellipse cx="50" cy="56" rx="6" ry="4" fill="#1e293b"/>
+        <path d="M38 65 Q50 72 62 65 Q66 75 50 78 Q34 75 38 65 Z" fill="#EB8861"/>
+      </svg>
+    </div>
+    <div style="min-width:0">
+      <h1 class="brand__name">IndyBooks <span id="sync-status-badge" class="badge">Local</span></h1>
+      <p id="user-status-subtitle" class="brand__sub">Podcast &amp; Audiobook Hub</p>
+    </div>
+  </div>
+  <div class="header__actions">
+    <button class="icon-btn" type="button" data-action="open-search" aria-label="Search library">
+      <i class="fa-solid fa-search" aria-hidden="true"></i>
+    </button>
+    <button class="icon-btn" type="button" data-action="open-auth" aria-label="Cloud sync settings">
+      <i class="fa-solid fa-cloud" aria-hidden="true"></i>
+    </button>
+    <button class="icon-btn" type="button" data-action="open-settings" aria-label="App settings">
+      <i class="fa-solid fa-gear" aria-hidden="true"></i>
+    </button>
+  </div>
+</header>
+
+<main class="main">
+  <div class="toolbar">
+    <button class="tool" type="button" data-action="open-add-feed">
+      <i class="fa-solid fa-rss" aria-hidden="true"></i> Add RSS feed
+    </button>
+    <button class="tool" type="button" data-action="open-add-url">
+      <i class="fa-solid fa-link" aria-hidden="true"></i> Add audio URL
+    </button>
+    <label class="tool">
+      <i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i> Upload audio
+      <input type="file" id="local-audio-input" class="hidden" multiple
+             accept="audio/*,.mp3,.m4a,.m4b,.aac,.wav,.ogg">
+    </label>
+    <button class="tool tool--accent" type="button" data-action="wildcard">
+      <i class="fa-solid fa-shuffle" aria-hidden="true"></i> Wildcard
+    </button>
+    <button class="tool tool--wide" type="button" data-action="open-create-folder">
+      <i class="fa-solid fa-folder-plus" aria-hidden="true"></i> New folder
+    </button>
+  </div>
+
+  <div id="library-container" class="library"></div>
+</main>
+
+<!-- Mini player -->
+<div id="mini-player" class="mini">
+  <div id="mini-progress-track" class="mini__track" role="progressbar" aria-label="Playback position">
+    <span id="mini-progress" class="mini__fill"></span>
+  </div>
+  <div class="mini__row">
+    <button class="mini__info" type="button" data-action="open-player" aria-label="Open full player">
+      <span id="mini-cover" class="mini__cover"><i class="fa-solid fa-headphones" aria-hidden="true"></i></span>
+      <span class="mini__text">
+        <span id="mini-title" class="mini__title">No audio loaded</span>
+        <span id="mini-subtitle" class="mini__sub">Tap to choose something to play</span>
+      </span>
+    </button>
+    <div class="mini__controls">
+      <button id="sloth-mode-btn" class="icon-btn sloth-btn optional-control" type="button"
+              data-action="toggle-sloth" aria-pressed="false" title="Tree Sloth — half speed" aria-label="Tree Sloth half speed">
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <path d="M5 25 L95 25" stroke="#854d0e" stroke-width="8"/>
+          <path d="M35 25 C35 35, 30 45, 40 55 C48 62, 60 62, 68 55 C75 45, 70 35, 70 25"/>
+          <circle cx="54" cy="50" r="12"/>
+        </svg>
+      </button>
+      <button class="icon-btn optional-control" type="button" data-action="skip-back" aria-label="Back 15 seconds">
+        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+      </button>
+      <button id="mini-play-btn" class="play-btn" type="button" data-action="toggle-play" aria-label="Play">
+        <i class="fa-solid fa-play" aria-hidden="true"></i>
+      </button>
+      <button class="icon-btn" type="button" data-action="skip-forward" aria-label="Forward 30 seconds">
+        <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+      </button>
+    </div>
+  </div>
+</div>
+
+<audio id="main-audio-element" preload="metadata"></audio>
+
+<!-- Full player sheet -->
+<div id="player-modal" class="sheet" role="dialog" aria-modal="true" aria-label="Now playing" aria-hidden="true">
+  <div class="sheet__bar">
+    <button class="icon-btn" type="button" data-action="close-player" aria-label="Close player">
+      <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+    </button>
+    <div style="text-align:center;min-width:0">
+      <span class="sheet__eyebrow">Now playing</span>
+      <h2 id="modal-org-title" class="brand__sub" style="max-width:200px;margin:0 auto">IndyBooks</h2>
+    </div>
+    <button class="icon-btn" type="button" data-action="open-bookmarks" aria-label="Bookmarks" style="position:relative">
+      <i class="fa-solid fa-bookmark" aria-hidden="true"></i>
+      <span id="bookmark-count-badge" class="count-badge hidden">0</span>
+    </button>
+  </div>
+
+  <div class="sheet__body">
+    <div id="modal-cover-container" class="sheet__cover"><i class="fa-solid fa-headphones" aria-hidden="true"></i></div>
+
+    <div class="sheet__meta">
+      <h3 id="modal-title" class="sheet__title">Select an audio file</h3>
+      <p id="modal-subtitle" class="sheet__sub">Ready to listen</p>
+      <div class="sheet__stats">
+        <span id="modal-time-remaining">Time remaining: --:--</span>
+        <span aria-hidden="true">&middot;</span>
+        <span id="modal-listened-pct">0% listened</span>
+      </div>
+    </div>
+
+    <div class="seek">
+      <input type="range" id="modal-seek-slider" min="0" max="0" value="0" step="0.5" aria-label="Seek">
+      <div class="seek__labels">
+        <span id="current-time-label">0:00</span>
+        <span id="total-time-label">--:--</span>
+      </div>
+    </div>
+
+    <div class="transport">
+      <button id="modal-sloth-btn" class="stack" type="button" data-action="toggle-sloth" aria-pressed="false">
+        <span class="stack__icon">
+          <svg viewBox="0 0 100 100" width="20" height="20" style="stroke:currentColor;fill:none;stroke-width:6;stroke-linecap:round;stroke-linejoin:round" aria-hidden="true">
+            <path d="M5 25 L95 25" stroke="#854d0e" stroke-width="8"/>
+            <path d="M35 25 C35 35, 30 45, 40 55 C48 62, 60 62, 68 55 C75 45, 70 35, 70 25"/>
+            <circle cx="54" cy="50" r="12"/>
+          </svg>
+        </span>
+        Tree Sloth
+      </button>
+      <button class="transport__round" type="button" data-action="skip-back" aria-label="Back 15 seconds">
+        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+      </button>
+      <button id="modal-play-btn" class="play-btn play-btn--lg" type="button" data-action="toggle-play" aria-label="Play">
+        <i class="fa-solid fa-play" aria-hidden="true"></i>
+      </button>
+      <button class="transport__round" type="button" data-action="skip-forward" aria-label="Forward 30 seconds">
+        <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+      </button>
+      <button class="stack" type="button" data-action="add-bookmark">
+        <span class="stack__icon"><i class="fa-solid fa-bookmark" aria-hidden="true"></i></span>
+        Bookmark
+      </button>
+    </div>
+
+    <div class="chips">
+      <div class="chip">
+        <span>Speed</span>
+        <button type="button" data-action="speed-down" aria-label="Slower">&minus;</button>
+        <span id="speed-label" class="chip__value">1.0x</span>
+        <button type="button" data-action="speed-up" aria-label="Faster">+</button>
+      </div>
+      <div class="chip">
+        <i class="fa-solid fa-volume-low" style="color:var(--sunshine)" aria-hidden="true"></i>
+        <input type="range" id="app-volume-slider" class="volume-slider" min="0" max="1" step="0.05" value="1" aria-label="Volume">
+        <span id="volume-label" class="chip__value" style="min-width:38px">100%</span>
+      </div>
+      <button class="chip chip--action" type="button" data-action="open-sleep-timer">
+        <i class="fa-solid fa-moon" style="color:var(--sunshine)" aria-hidden="true"></i>
+        <span id="sleep-timer-label" style="color:#fff">Sleep timer</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Cloud sync -->
+<div id="auth-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="auth-title" aria-hidden="true">
+  <div class="modal__panel">
+    <div class="modal__head">
+      <h2 id="auth-title">Cloud sync</h2>
+      <button class="icon-btn icon-btn--sm" type="button" data-action="close-modals" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+    </div>
+    <div id="auth-unlogged-view" style="display:flex;flex-direction:column;gap:12px">
+      <p class="modal__note">Connect your own Supabase project to keep your library, progress, and bookmarks in step across devices. Your keys stay on this device.</p>
+      <div class="field">
+        <label for="supabase-url-input">Supabase project URL</label>
+        <input type="url" id="supabase-url-input" placeholder="https://yourproject.supabase.co" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="supabase-key-input">Supabase anon key</label>
+        <input type="password" id="supabase-key-input" placeholder="eyJhbGciOi…" autocomplete="off">
+      </div>
+      <button class="btn btn--primary btn--block" type="button" data-action="save-supabase">Connect Supabase</button>
+      <div class="modal__section">
+        <span class="field-label">Sign in or create an account</span>
+        <div class="field"><input type="email" id="auth-email-input" placeholder="you@example.com" autocomplete="username" aria-label="Email"></div>
+        <div class="field"><input type="password" id="auth-pass-input" placeholder="Password" autocomplete="current-password" aria-label="Password"></div>
+        <div class="btn-row">
+          <button class="btn btn--dark" type="button" data-action="sign-in">Sign in</button>
+          <button class="btn btn--ghost" type="button" data-action="sign-up">Sign up</button>
+        </div>
+      </div>
+    </div>
+    <div id="auth-logged-view" class="hidden" style="flex-direction:column;gap:12px">
+      <div class="status status--ok">
+        <div><strong>Connected</strong><small id="auth-user-email"></small></div>
+        <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>
+      </div>
+      <button class="btn btn--primary btn--block" type="button" data-action="sync-now">Sync from cloud now</button>
+      <button class="btn btn--danger btn--block" type="button" data-action="sign-out">Sign out</button>
+    </div>
+  </div>
+</div>
+
+<!-- Goodreads -->
+<div id="goodreads-modal" class="modal modal--top" role="dialog" aria-modal="true" aria-labelledby="gr-title" aria-hidden="true">
+  <div class="modal__panel">
+    <div class="modal__head">
+      <h2 id="gr-title">Goodreads</h2>
+      <button class="icon-btn icon-btn--sm" type="button" data-action="close-goodreads" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+    </div>
+    <div id="goodreads-unlogged" style="display:flex;flex-direction:column;gap:12px">
+      <p class="modal__note">Link your profile to track audiobooks against your reading goal, or import a CSV export to bring your shelves in.</p>
+      <div class="field">
+        <label for="goodreads-user-id">Goodreads profile ID</label>
+        <input type="text" id="goodreads-user-id" placeholder="12345678-username">
+      </div>
+      <button class="btn btn--primary btn--block" type="button" data-action="save-goodreads">Link account</button>
+      <div class="modal__section">
+        <span class="field-label">Import a Goodreads CSV export</span>
+        <input type="file" id="goodreads-csv-file" class="file-input" accept=".csv">
+      </div>
+    </div>
+    <div id="goodreads-logged" class="hidden" style="flex-direction:column;gap:12px">
+      <div class="status status--info">
+        <div><strong>Goodreads linked</strong><small id="goodreads-account-display"></small></div>
+        <i class="fa-solid fa-book-open" aria-hidden="true"></i>
+      </div>
+      <button class="btn btn--danger btn--block" type="button" data-action="disconnect-goodreads">Disconnect</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add RSS -->
+<div id="add-feed-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="rss-title" aria-hidden="true">
+  <div class="modal__panel">
+    <div class="modal__head">
+      <h2 id="rss-title">Add a podcast feed</h2>
+      <button class="icon-btn icon-btn--sm" type="button" data-action="close-modals" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+    </div>
+    <div class="field">
+      <label for="rss-url-input">RSS feed URL</label>
+      <input type="url" id="rss-url-input" placeholder="https://example.com/podcast/rss">
+    </div>
+    <p class="modal__note">Episodes already in your library are skipped, so it is safe to re-import a feed to pick up new ones.</p>
+    <div class="modal__actions">
+      <button class="btn btn--quiet" type="button" data-action="close-modals">Cancel</button>
+      <button class="btn btn--primary" type="button" data-action="ingest-rss">Import feed</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add URL -->
+<div id="add-url-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="url-title" aria-hidden="true">
+  <div class="modal__panel">
+    <div class="modal__head">
+      <h2 id="url-title">Add audio from a link</h2>
+      <button class="icon-btn icon-btn--sm" type="button" data-action="close-modals" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+    </div>
+    <div class="field"><label for="direct-title-input">Title</label>
+      <input type="text" id="direct-title-input" placeholder="My audiobook, chapter 1"></div>
+    <div class="field"><label for="direct-url-input">Direct audio link</label>
+      <input type="url" id="direct-url-input" placeholder="https://myserver.com/audio/chapter1.m4b"></div>
+    <div class="field"><label for="direct-cover-input">Cover image URL (optional)</label>
+      <input type="url" id="direct-cover-input" placeholder="https://myserver.com/cover.jpg"></div>
+    <div class="field"><label for="direct-folder-select">Folder</label>
+      <select id="direct-folder-select"><option value="">(None — Ungrouped)</option></select></div>
+    <div class="modal__actions">
+      <button class="btn btn--quiet" type="button" data-action="close-modals">Cancel</button>
+      <button class="btn btn--primary" type="button" data-action="add-url">Add to library</button>
+    </div>
+  </div>
+</div>
+
+<!-- Create folder -->
+<div id="create-folder-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="folder-title" aria-hidden="true">
+  <div class="modal__panel">
+    <div class="modal__head">
+      <h2 id="folder-title">New folder</h2>
+      <button class="icon-btn icon-btn--sm" type="button" data-action="close-modals" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+    </div>
+    <div class="field"><label for="folder-name-input">Folder name</label>
+      <input type="text" id="folder-name-input" placeholder="Mystery audiobooks"></div>
+    <div class="modal__actions">
+      <button class="btn btn--quiet" type="button" data-action="close-modals">Cancel</button>
+      <button class="btn btn--primary" type="button" data-action="create-folder">Create folder</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit item -->
+<div id="edit-item-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-title" aria-hidden="true">
+  <div class="modal__panel">
+    <div class="modal__head">
+      <h2 id="edit-title">Edit details</h2>
+      <button class="icon-btn icon-btn--sm" type="button" data-action="close-modals" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+    </div>
+    <input type="hidden" id="edit-item-id">
+    <div class="field"><label for="edit-title-input">Title</label><input type="text" id="edit-title-input"></div>
+    <div class="field"><label for="edit-cover-input">Cover image URL</label><input type="url" id="edit-cover-input" placeholder="https://…"></div>
+    <div class="field"><label for="edit-folder-select">Folder</label>
+      <select id="edit-folder-select"><option value="">(None — Ungrouped)</option></select></div>
+    <div class="field"><label for="edit-tags-input">Tags</label>
+      <input type="text" id="edit-tags-input" placeholder="audiobook, mystery, sci-fi"></div>
+    <div class="modal__actions" style="justify-content:space-between">
+      <button class="btn btn--danger" type="button" data-action="delete-item" data-id="">Remove item</button>
+      <span style="display:flex;gap:8px">
+        <button class="btn btn--quiet" type="button" data-action="close-modals">Cancel</button>
+        <button class="btn btn--primary" type="button" data-action="save-edits">Save changes</button>
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- Sleep timer -->
+<div id="sleep-timer-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="sleep-title" aria-hidden="true">
+  <div class="modal__panel" style="max-width:24rem;text-align:center">
+    <div class="modal__head">
+      <h2 id="sleep-title">Sleep timer</h2>
+      <button class="icon-btn icon-btn--sm" type="button" data-action="close-modals" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+    </div>
+    <div class="sleep-grid">
+      <button class="btn" type="button" data-action="sleep-10">10 minutes</button>
+      <button class="btn" type="button" data-action="sleep-15">15 minutes</button>
+      <button class="btn" type="button" data-action="sleep-30">30 minutes</button>
+      <button class="btn" type="button" data-action="sleep-60">60 minutes</button>
+    </div>
+    <button class="btn btn--danger btn--block" type="button" data-action="cancel-sleep">Cancel timer</button>
+  </div>
+</div>
+
+<!-- Bookmarks -->
+<div id="bookmarks-modal" class="modal modal--top" role="dialog" aria-modal="true" aria-labelledby="bm-title" aria-hidden="true">
+  <div class="modal__panel">
+    <div class="modal__head">
+      <h2 id="bm-title">Bookmarks</h2>
+      <button class="icon-btn icon-btn--sm" type="button" data-action="close-modals" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+    </div>
+    <div id="bookmarks-list" class="scroll-list"></div>
+  </div>
+</div>
+
+<!-- Settings -->
+<div id="settings-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" aria-hidden="true">
+  <div class="modal__panel">
+    <div class="modal__head">
+      <h2 id="settings-title">Settings</h2>
+      <button class="icon-btn icon-btn--sm" type="button" data-action="close-modals" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+    </div>
+    <div class="modal__row">
+      <span>Goodreads</span>
+      <button class="btn btn--soft" type="button" data-action="open-goodreads">Configure</button>
+    </div>
+    <div class="modal__row">
+      <span>Download a backup</span>
+      <button class="btn btn--ghost" type="button" data-action="export">Export JSON</button>
+    </div>
+    <div class="modal__section">
+      <span class="field-label">Restore from a backup</span>
+      <input type="file" id="import-backup-file" class="file-input" accept=".json,application/json">
+    </div>
+    <div class="modal__actions">
+      <button class="btn btn--primary" type="button" data-action="close-modals">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Search -->
+<div id="search-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="search-title" aria-hidden="true">
+  <div class="modal__panel">
+    <div class="modal__head">
+      <h2 id="search-title">Search</h2>
+      <button class="icon-btn icon-btn--sm" type="button" data-action="close-modals" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+    </div>
+    <div class="field">
+      <input type="search" id="search-input" placeholder="Titles, folders, or #tags" aria-label="Search your library">
+    </div>
+    <div id="tag-cloud" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    <div id="search-results" class="scroll-list" style="max-height:15rem"></div>
+  </div>
+</div>
+
+<div id="toast-region" class="toast" role="status" aria-live="polite"></div>
+
+<div id="update-banner" class="update-banner" role="status" aria-live="polite">
+  <span>A new version of IndyBooks is ready.</span>
+  <span class="update-banner__actions">
+    <button class="btn btn--sm btn--soft" type="button" data-action="apply-update">Reload</button>
+    <button class="icon-btn icon-btn--sm" type="button" data-action="dismiss-update" aria-label="Dismiss">
+      <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+    </button>
+  </span>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+<script src="app.js" defer></script>
+</body>
+</html>
