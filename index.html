@@ -477,17 +477,12 @@
 
     <!-- Application Script -->
     <script>
-       <script>
     const SUPABASE_URL = 'https://rpgueqafknvrwvrbzixd.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade';
     const supabaseClient = supabase.createClient('https://rpgueqafknvrwvrbzixd.supabase.co', 'sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade');
     let currentUser = null;
     let appState = { ... };
-    // ... rest of your JavaScript code
-</script>
-;
         let currentUser = null;
-
         let appState = {
             items: JSON.parse(localStorage.getItem('indybooks_items') || '[]'),
             folders: JSON.parse(localStorage.getItem('indybooks_folders') || '["Indie Mystery", "Podcasts"]'),
