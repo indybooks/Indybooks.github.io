@@ -501,8 +501,8 @@
         const audioEl = document.getElementById('main-audio-element');
 
         // Initialize Supabase if keys exist in localStorage
-        const savedUrl = localStorage.getItem('indybooks_supabase_url');
-        const savedKey = localStorage.getItem('indybooks_supabase_key');
+        const savedUrl = localStorage.getItem('https://rpgueqafknvrwvrbzixd.supabase.co');
+        const savedKey = localStorage.getItem('sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade');
         if (savedUrl && savedKey && window.supabase) {
             supabaseClient = supabase.createClient(savedUrl, savedKey);
             checkSupabaseSession();
@@ -554,8 +554,8 @@
             const url = document.getElementById('supabase-url-input').value.trim();
             const key = document.getElementById('supabase-key-input').value.trim();
             if (!url || !key) return;
-            localStorage.setItem('indybooks_supabase_url', url);
-            localStorage.setItem('indybooks_supabase_key', key);
+            localStorage.setItem('https://rpgueqafknvrwvrbzixd.supabase.co', url);
+            localStorage.setItem('sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade', key);
             supabaseClient = supabase.createClient(url, key);
             closeModals();
         }
