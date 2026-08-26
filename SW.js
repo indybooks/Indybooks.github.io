@@ -1,6 +1,3 @@
-const SUPABASE_URL = 'https://rpgueqafknvrwvrbzixd.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade';
-const supabaseClient = supabase.createClient(https://rpgueqafknvrwvrbzixd.supabase.co, sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade);
 const CACHE_NAME = 'indybooks-v5';
 const ASSETS = [
     './',
