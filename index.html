@@ -8,10 +8,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    const SUPABASE_URL = 'https://rpgueqafknvrwvrbzixd.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade';
-const supabaseClient = supabase.createClient('https://rpgueqafknvrwvrbzixd.supabase.co', 'sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade');
-
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2B4C6D">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -481,7 +477,15 @@ const supabaseClient = supabase.createClient('https://rpgueqafknvrwvrbzixd.supab
 
     <!-- Application Script -->
     <script>
-        let supabaseClient = null;
+       <script>
+    const SUPABASE_URL = 'https://rpgueqafknvrwvrbzixd.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade';
+    const supabaseClient = supabase.createClient('https://rpgueqafknvrwvrbzixd.supabase.co', 'sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade');
+    let currentUser = null;
+    let appState = { ... };
+    // ... rest of your JavaScript code
+</script>
+;
         let currentUser = null;
 
         let appState = {
