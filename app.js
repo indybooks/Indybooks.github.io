@@ -929,7 +929,25 @@ function updateBookmarkBadge() {
   dom['bookmark-count-badge'].textContent = String(count);
   dom['bookmark-count-badge'].classList.toggle('hidden', count === 0);
 }
+async function fetchUserBookmarks() {
+    const { data, error } = await supabaseClient
+        .from('bookmarks')
+        ->select(`
+            *,
+            media_items (
+                id,
+                title,
+                feed_url,
+                item_type
+            )
+        `);
 
+    if (error) {
+        console.error('Error fetching bookmarks:', error.message);
+        return [];
+    }
+    return data;
+}
 function renderBookmarksList() {
   const item = currentItem();
   const list = dom['bookmarks-list'];
