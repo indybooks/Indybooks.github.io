@@ -15,8 +15,8 @@
   "categories": ["books", "entertainment", "music"],
   "icons": [
     {
-      "src": "icon.svg",
-      "sizes": "194.194",
+      "src": "icon-194.png",
+      "sizes": "194x194",
       "type": "image/png",
       "purpose": "any"
     },
