@@ -680,8 +680,8 @@
             gainNode.connect(audioCtx.destination);
         }
 
-        const savedUrl = localStorage.getItem('indybooks_supabase_url');
-        const savedKey = localStorage.getItem('indybooks_supabase_key');
+        const savedUrl = localStorage.getItem('https://rpgueqafknvrwvrbzixd.supabase.co');
+        const savedKey = localStorage.getItem('sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade');
         if (savedUrl && savedKey && window.supabase) {
             try {
                 supabaseClient = supabase.createClient(savedUrl, savedKey);
@@ -828,8 +828,8 @@
 
         // Supabase Auth & Cloud Sync Modal Handlers
         function openAuthModal() {
-            document.getElementById('supabase-url-input').value = localStorage.getItem('indybooks_supabase_url') || '';
-            document.getElementById('supabase-key-input').value = localStorage.getItem('indybooks_supabase_key') || '';
+            document.getElementById('supabase-url-input').value = localStorage.getItem('https://rpgueqafknvrwvrbzixd.supabase.co') || '';
+            document.getElementById('supabase-key-input').value = localStorage.getItem('sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade') || '';
             updateAuthModalUI();
             document.getElementById('auth-modal').classList.remove('hidden');
             document.getElementById('auth-modal').classList.add('flex');
@@ -855,8 +855,8 @@
                 alert('Please enter both Supabase URL and Key.');
                 return;
             }
-            localStorage.setItem('indybooks_supabase_url', url);
-            localStorage.setItem('indybooks_supabase_key', key);
+            localStorage.setItem('https://rpgueqafknvrwvrbzixd.supabase.co', url);
+            localStorage.setItem('sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade', key);
             try {
                 supabaseClient = supabase.createClient(url, key);
                 alert('Supabase credentials saved and client initialized successfully!');
