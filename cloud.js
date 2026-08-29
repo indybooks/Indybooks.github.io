@@ -459,30 +459,53 @@ window.Cloud = (function () {
    * This routes through an Edge Function in your own project instead.
    * ---------------------------------------------------------------- */
 
-  async function fetchFeed(url, signal) {
-    requireClient();
-    if (!user) throw new Error('Sign in to import feeds.');
+ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
-    const { data, error } = await client.functions.invoke('fetch-feed', {
-      body: { url },
-      ...(signal ? { signal } : {}),
-    });
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
 
-    if (error) {
-      // functions.invoke surfaces the HTTP failure but keeps the JSON body on
-      // the response, which is where the useful message lives.
-      let detail = error.message || 'Feed fetch failed.';
-      try {
-        const body = await error.context?.json?.();
-        if (body && body.error) detail = body.error;
-      } catch { /* no JSON body */ }
-      throw new Error(detail);
-    }
-    if (!data || !data.contents) throw new Error('The feed came back empty.');
-    return data;
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
   }
 
-  function canFetchFeeds() { return !!(client && user); }
+  try {
+    const { feedUrl } = await req.json()
+    if (!feedUrl) {
+      return new Response(JSON.stringify({ error: 'Missing feedUrl parameter' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Fetch RSS feed with a User-Agent to prevent 403 blocks from strict hosts
+    const rssResponse = await fetch(feedUrl, {
+      headers: {
+        'User-Agent': 'IndyBooks-PWA/1.0 (Audiobook and Podcast Reader)'
+      }
+    })
+
+    if (!rssResponse.ok) {
+      throw new Error(`Failed to fetch RSS feed, status code: ${rssResponse.status}`)
+    }
+
+    const xmlText = await rssResponse.text()
+
+    // Return successful XML payload or parsed JSON back to client
+    return new Response(JSON.stringify({ success: true, feedContent: xmlText }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    })
+
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 400,
+    })
+  }
+})
 
   /* ---------------------------------------------------------------- *
    * Public interface
