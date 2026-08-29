@@ -1,20 +1,63 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<!-- user-scalable=no removed: blocking pinch-zoom fails WCAG 1.4.4 -->
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>IndyBooks — Podcast &amp; Audiobook Hub</title>
-<meta name="description" content="A local-first hub for podcasts and audiobooks, with optional cloud sync.">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IndyBooks - Audiobooks & Podcasts</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2B4C6D">
+    <style>
+        :root {
+            --primary: #4173B0;
+            --secondary: #C3D7EA;
+            --dark: #2B4C6D;
+            --accent-peach: #EABCB5;
+            --accent-coral: #EB8861;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: var(--secondary);
+            color: var(--dark);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(43, 76, 109, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>IndyBooks Library</h1>
+        <div id="status-display">Initializing Supabase connection...</div>
+    </div>
 
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#2B4C6D">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="IndyBooks">
+    <!-- Supabase CDN Client Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        const SUPABASE_URL = 'https://rpgueqafknvrwvrbzixd.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade';
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        async function verifyConnection() {
+            const statusEl = document.getElementById('status-display');
+            const { data, error } = await supabaseClient.from('media_items').select('id').limit(1);
+            if (error) {
+                statusEl.textContent = `Connection error: ${error.message}`;
+            } else {
+                statusEl.textContent = 'Connected to Supabase successfully!';
+            }
+        }
+
+        verifyConnection();
+    </script>
+</body>
+</html>
 
 <style>
 /* =====================================================================
