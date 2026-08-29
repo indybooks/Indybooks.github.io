@@ -8,6 +8,8 @@
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- JSZip for handling .zip audiobook uploads -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2B4C6D">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -58,13 +60,17 @@
             </div>
         </div>
         <div class="flex items-center space-x-2">
-            <button onclick="openSearchModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
+            <button onclick="openSearchModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition" title="Search & Tags">
                 <i class="fa-solid fa-search text-sm"></i>
             </button>
-            <button onclick="openAuthModal()" id="auth-header-btn" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition" title="Supabase Cloud Account">
+            <button onclick="openQueueModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition relative" title="Play Queue">
+                <i class="fa-solid fa-list-ul text-sm"></i>
+                <span id="queue-count-badge" class="absolute -top-1 -right-1 bg-[#EB8861] text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">0</span>
+            </button>
+            <button onclick="openAuthModal()" id="auth-header-btn" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition" title="Cloud Account">
                 <i class="fa-solid fa-cloud text-sm"></i>
             </button>
-            <button onclick="openSettingsModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition">
+            <button onclick="openSettingsModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition" title="Settings">
                 <i class="fa-solid fa-gear text-sm"></i>
             </button>
         </div>
@@ -85,7 +91,7 @@
             <label class="bg-[#4173B0] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#2B4C6D] transition flex flex-col items-center justify-center text-xs font-semibold cursor-pointer">
                 <i class="fa-solid fa-file-arrow-up mb-1 text-sm text-[#EDCE7A]"></i>
                 Upload Audio
-                <input type="file" id="local-audio-input" accept="audio/*,.mp3,.m4a,.m4b,.aac,.wav,.ogg" multiple class="hidden" onchange="handleLocalFiles(event)">
+                <input type="file" id="local-audio-input" accept="audio/*,.mp3,.m4a,.m4b,.aac,.wav,.ogg,.zip" multiple class="hidden" onchange="handleLocalFiles(event)">
             </label>
             <button onclick="playWildcard()" class="bg-[#EB8861] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#d5734c] transition flex flex-col items-center justify-center text-xs font-semibold" title="Wildcard: Play Random Track">
                 <i class="fa-solid fa-shuffle mb-1 text-sm text-white"></i>
@@ -118,7 +124,10 @@
                 </div>
             </div>
 
-            <div class="flex items-center space-x-3 ml-3">
+            <div class="flex items-center space-x-2 sm:space-x-3 ml-2">
+                <button onclick="queueCurrentTrack()" title="Add to Queue" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/25 text-[#EDCE7A] flex items-center justify-center transition">
+                    <i class="fa-solid fa-plus text-xs"></i>
+                </button>
                 <button id="sloth-mode-btn" onclick="toggleSlothMode()" title="Sloth Mode (0.5x Tree Sloth Speed)" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/25 text-[#EB8861] flex items-center justify-center transition">
                     <svg viewBox="0 0 100 100" class="w-5 h-5 stroke-current fill-none" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M5 25 L95 25" stroke="#854d0e" stroke-width="8"/>
@@ -151,10 +160,12 @@
                 <span class="text-[10px] uppercase tracking-widest text-[#EDCE7A] font-bold">Now Playing</span>
                 <h3 id="modal-org-title" class="text-xs text-[#C3D7EA] truncate max-w-[200px]">IndyBooks</h3>
             </div>
-            <button onclick="openBookmarksModal()" class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white relative">
-                <i class="fa-solid fa-bookmark"></i>
-                <span id="bookmark-count-badge" class="absolute -top-1 -right-1 bg-[#EB8861] text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center">0</span>
-            </button>
+            <div class="flex items-center space-x-2">
+                <button onclick="openBookmarksModal()" class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white relative" title="Bookmarks">
+                    <i class="fa-solid fa-bookmark"></i>
+                    <span id="bookmark-count-badge" class="absolute -top-1 -right-1 bg-[#EB8861] text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">0</span>
+                </button>
+            </div>
         </div>
 
         <div class="flex-1 overflow-y-auto px-6 py-6 flex flex-col items-center justify-center space-y-6">
@@ -163,8 +174,9 @@
             </div>
 
             <div class="text-center w-full max-w-md">
-                <h2 id="modal-title" class="text-xl font-bold truncate text-white mb-1">Select an Audio File</h2>
-                <p id="modal-subtitle" class="text-sm text-[#C3D7EA] truncate">Ready to listen</p>
+                <h2 id="modal-title" class="text-xl font-bold truncate text-white mb-0.5">Select an Audio File</h2>
+                <p id="modal-author" class="text-sm font-medium text-[#EDCE7A] truncate mb-1">Author Name</p>
+                <p id="modal-subtitle" class="text-xs text-[#C3D7EA] truncate">Ready to listen</p>
                 <div class="flex items-center justify-center gap-4 mt-3 text-xs text-[#C3D7EA]">
                     <span id="modal-time-remaining">Time remaining: --:--</span>
                     <span>•</span>
@@ -208,7 +220,7 @@
                 </button>
             </div>
 
-            <div class="flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-md pt-2">
+            <div class="flex flex-wrap items-center justify-center gap-3 w-full max-w-md pt-2">
                 <div class="bg-white/10 rounded-xl px-4 py-2 flex items-center gap-3">
                     <span class="text-xs text-[#C3D7EA]">Speed:</span>
                     <button onclick="adjustSpeed(-0.1)" class="w-7 h-7 rounded-lg bg-white/10 text-white font-bold hover:bg-white/20">-</button>
@@ -218,7 +230,7 @@
                 <div class="bg-white/10 rounded-xl px-4 py-2 flex items-center gap-2">
                     <i class="fa-solid fa-volume-low text-xs text-[#EDCE7A]"></i>
                     <span class="text-xs text-[#C3D7EA]">Vol:</span>
-                    <input type="range" id="app-volume-slider" min="0" max="1" step="0.05" value="1" class="w-20 accent-[#EDCE7A] cursor-pointer" oninput="adjustAppVolume(this.value)">
+                    <input type="range" id="app-volume-slider" min="0" max="1" step="0.05" value="1" class="w-16 accent-[#EDCE7A] cursor-pointer" oninput="adjustAppVolume(this.value)">
                     <span id="volume-label" class="text-xs text-white font-bold w-8 text-right">100%</span>
                 </div>
                 <button onclick="openSleepTimerModal()" class="bg-white/10 hover:bg-white/20 rounded-xl px-4 py-2.5 flex items-center gap-2 text-xs text-white">
@@ -229,44 +241,150 @@
         </div>
     </div>
 
-    <div id="auth-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+    
+    <!-- Add Direct Audio URL Modal -->
+    <div id="add-url-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center">
-                <h3 class="text-lg font-bold text-[#2B4C6D]">Supabase Cloud Sync</h3>
+                <h3 class="text-lg font-bold text-[#2B4C6D]">Add Audiobook / Audio URL</h3>
                 <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
-            <div id="auth-unlogged-view" class="space-y-3">
-                <p class="text-xs text-gray-600">Connect your Supabase backend to sync your podcast library, listening progress, and bookmarks across all your devices.</p>
+            <div class="space-y-3">
                 <div>
-                    <label class="block text-xs font-semibold text-gray-600 mb-1">Supabase Project URL</label>
-                    <input type="url" id="supabase-url-input" placeholder="https://xyzproject.supabase.co" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Title</label>
+                    <input type="text" id="direct-title-input" placeholder="e.g., Chapter 1: The Journey" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
                 </div>
                 <div>
-                    <label class="block text-xs font-semibold text-gray-600 mb-1">Supabase Anon Key</label>
-                    <input type="password" id="supabase-key-input" placeholder="eyJhbGciOi..." class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Author</label>
+                    <input type="text" id="direct-author-input" placeholder="e.g., Jane Doe" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
                 </div>
-                <button onclick="saveSupabaseConfig()" class="w-full py-2.5 bg-[#4173B0] text-white rounded-xl text-xs font-semibold shadow hover:bg-[#2B4C6D]">Connect Supabase</button>
-                
-                <div class="pt-3 border-t border-gray-100">
-                    <label class="block text-xs font-semibold text-gray-600 mb-1">User Sign In / Sign Up</label>
-                    <input type="email" id="auth-email-input" placeholder="you@example.com" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0] mb-2">
-                    <input type="password" id="auth-pass-input" placeholder="Password" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0] mb-3">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Direct Audio Link (.mp3, .m4b, .aac, .wav)</label>
+                    <input type="url" id="direct-url-input" placeholder="https://myserver.com/audio/book.m4b" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Folder</label>
+                    <select id="direct-folder-select" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
+                        <option value="">(None - Ungrouped)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Cover Image</label>
                     <div class="flex gap-2">
-                        <button onclick="supabaseSignIn()" class="flex-1 py-2 bg-[#2B4C6D] text-white rounded-xl text-xs font-semibold">Sign In</button>
-                        <button onclick="supabaseSignUp()" class="flex-1 py-2 bg-gray-100 text-[#2B4C6D] hover:bg-gray-200 rounded-xl text-xs font-semibold">Sign Up</button>
+                        <input type="url" id="direct-cover-input" placeholder="Cover Image URL" class="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
+                        <button type="button" onclick="pasteCoverFromClipboard('direct-cover-input')" class="px-3 bg-gray-100 hover:bg-gray-200 text-[#2B4C6D] rounded-xl text-xs font-semibold" title="Paste from Clipboard">
+                            <i class="fa-solid fa-clipboard"></i> Paste
+                        </button>
+                    </div>
+                    <div class="flex gap-2 mt-2">
+                        <label class="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#2B4C6D] rounded-xl text-xs font-semibold text-center cursor-pointer">
+                            <i class="fa-solid fa-image mr-1"></i> Choose Photo Library
+                            <input type="file" accept="image/*" class="hidden" onchange="handleCoverImageUpload(event, 'direct-cover-input')">
+                        </label>
                     </div>
                 </div>
             </div>
-            <div id="auth-logged-view" class="space-y-3 hidden">
-                <div class="p-3 bg-green-50 text-green-800 rounded-xl text-xs flex items-center justify-between">
-                    <div>
-                        <p class="font-bold">Connected to Supabase</p>
-                        <p id="auth-user-email" class="text-[10px] text-green-700"></p>
-                    </div>
-                    <i class="fa-solid fa-cloud-arrow-up text-lg text-green-600"></i>
+            <div class="flex justify-end space-x-2 pt-2">
+                <button onclick="closeModals()" class="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
+                <button onclick="addAudioFromUrl()" class="px-5 py-2 text-xs font-semibold bg-[#4173B0] text-white rounded-xl shadow hover:bg-[#2B4C6D]">Add Item</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Item Modal -->
+    <div id="edit-item-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center">
+                <h3 class="text-lg font-bold text-[#2B4C6D]">Edit Audiobook Details</h3>
+                <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <input type="hidden" id="edit-item-id">
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Title</label>
+                    <input type="text" id="edit-title-input" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
                 </div>
-                <button onclick="fetchUserLibrary(currentUser.id)" class="w-full py-2.5 bg-[#4173B0] text-white rounded-xl text-xs font-semibold shadow">Sync From Cloud Now</button>
-                <button onclick="supabaseSignOut()" class="w-full py-2 bg-red-100 text-red-700 rounded-xl text-xs font-semibold">Sign Out</button>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Author</label>
+                    <input type="text" id="edit-author-input" placeholder="Author name" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Folder</label>
+                    <select id="edit-folder-select" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
+                        <option value="">(None - Ungrouped)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Cover Image</label>
+                    <div class="flex gap-2 mb-2">
+                        <input type="url" id="edit-cover-input" placeholder="https://..." class="flex-1 border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
+                        <button type="button" onclick="pasteCoverFromClipboard('edit-cover-input')" class="px-3 bg-gray-100 hover:bg-gray-200 text-[#2B4C6D] rounded-xl text-xs font-semibold" title="Paste from Clipboard">
+                            <i class="fa-solid fa-clipboard"></i> Paste
+                        </button>
+                    </div>
+                    <label class="block py-2 bg-gray-100 hover:bg-gray-200 text-[#2B4C6D] rounded-xl text-xs font-semibold text-center cursor-pointer">
+                        <i class="fa-solid fa-image mr-1"></i> Choose from Photo Library
+                        <input type="file" accept="image/*" class="hidden" onchange="handleCoverImageUpload(event, 'edit-cover-input')">
+                    </label>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Tags (comma separated)</label>
+                    <input type="text" id="edit-tags-input" placeholder="audiobook, mystery" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
+                </div>
+            </div>
+            <div class="flex justify-end space-x-2 pt-2">
+                <button onclick="closeModals()" class="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
+                <button onclick="saveItemEdits()" class="px-5 py-2 text-xs font-semibold bg-[#4173B0] text-white rounded-xl shadow hover:bg-[#2B4C6D]">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Play Queue Modal -->
+    <div id="queue-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center">
+                <h3 class="text-lg font-bold text-[#2B4C6D]">Play Queue</h3>
+                <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div id="queue-list" class="flex-1 overflow-y-auto space-y-2 divide-y divide-gray-100"></div>
+            <div class="flex justify-between items-center pt-2 border-t border-gray-100">
+                <button onclick="clearQueue()" class="px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 rounded-xl">Clear Queue</button>
+                <button onclick="closeModals()" class="px-5 py-2 text-xs font-semibold bg-[#4173B0] text-white rounded-xl shadow hover:bg-[#2B4C6D]">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal (Global Trim Settings & Goodreads) -->
+    <div id="settings-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center">
+                <h3 class="text-lg font-bold text-[#2B4C6D]">App Settings</h3>
+                <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="space-y-3 pt-2 border-t border-gray-100">
+                <h4 class="text-xs font-bold text-[#4173B0] uppercase tracking-wider">Global Playback Trim (Seconds)</h4>
+                <p class="text-[11px] text-gray-500">Automatically jump past intro intros/outros for all library files.</p>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Start Playing At (sec)</label>
+                        <input type="number" id="global-trim-start" min="0" value="0" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]" onchange="updateGlobalTrim()">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">End Playing At (sec)</label>
+                        <input type="number" id="global-trim-end" min="0" value="0" placeholder="0 = End" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]" onchange="updateGlobalTrim()">
+                    </div>
+                </div>
+            </div>
+            <div class="pt-2 border-t border-gray-100 flex justify-between items-center">
+                <span class="text-xs text-gray-600 font-medium">Goodreads Integration</span>
+                <button onclick="openGoodreadsModal()" class="px-4 py-2 bg-[#C3D7EA] text-[#2B4C6D] hover:bg-[#b2c8de] rounded-xl text-xs font-semibold">Configure</button>
+            </div>
+            <div class="pt-2 border-t border-gray-100 flex justify-between items-center">
+                <span class="text-xs text-gray-600 font-medium">Export / Backup Library Data</span>
+                <button onclick="exportLibrary()" class="px-4 py-2 bg-gray-100 text-[#2B4C6D] hover:bg-gray-200 rounded-xl text-xs font-semibold">Export JSON</button>
+            </div>
+            <div class="flex justify-end pt-2">
+                <button onclick="closeModals()" class="px-5 py-2 text-xs font-semibold bg-[#4173B0] text-white rounded-xl shadow hover:bg-[#2B4C6D]">Done</button>
             </div>
         </div>
     </div>
@@ -287,7 +405,7 @@
                 <button onclick="saveGoodreadsAccount()" class="w-full py-2.5 bg-[#4173B0] text-white rounded-xl text-xs font-semibold shadow">Link Goodreads Account</button>
                 <div class="pt-2 border-t border-gray-100">
                     <label class="block text-xs font-semibold text-gray-600 mb-1">Import Goodreads CSV Export</label>
-                    <input type="file" id="goodreads-csv-file" accept=".csv" class="w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#C3D7EA] file:text-[#2B4C6D] hover:file:bg-[#b2c8de]" onchange="importGoodreadsCSV(event)">
+                    <input type="file" id="goodreads-csv-file" accept=".csv" class="w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#C3D7EA] file:text-[#2B4C6D]" onchange="importGoodreadsCSV(event)">
                 </div>
             </div>
             <div id="goodreads-logged" class="space-y-3 hidden">
@@ -321,35 +439,6 @@
         </div>
     </div>
 
-    <!-- Add Direct Audio URL Modal -->
-    <div id="add-url-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
-            <div class="flex justify-between items-center">
-                <h3 class="text-lg font-bold text-[#2B4C6D]">Add Audio File from URL</h3>
-                <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-lg"></i></button>
-            </div>
-            <div>
-                <label class="block text-xs font-semibold text-gray-600 mb-1">Title</label>
-                <input type="text" id="direct-title-input" placeholder="e.g., My Audiobook Chapter 1" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#4173B0] mb-3">
-                
-                <label class="block text-xs font-semibold text-gray-600 mb-1">Direct Audio Link (Server / URL)</label>
-                <input type="url" id="direct-url-input" placeholder="https://myserver.com/audio/chapter1.m4b" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#4173B0] mb-3">
-
-                <label class="block text-xs font-semibold text-gray-600 mb-1">Cover Image URL (Optional)</label>
-                <input type="url" id="direct-cover-input" placeholder="https://myserver.com/images/cover.jpg" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#4173B0] mb-3">
-
-                <label class="block text-xs font-semibold text-gray-600 mb-1">Folder</label>
-                <select id="direct-folder-select" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#4173B0]">
-                    <option value="">(None - Ungrouped)</option>
-                </select>
-            </div>
-            <div class="flex justify-end space-x-2 pt-2">
-                <button onclick="closeModals()" class="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
-                <button onclick="addAudioFromUrl()" class="px-5 py-2 text-xs font-semibold bg-[#4173B0] text-white rounded-xl shadow hover:bg-[#2B4C6D]">Add URL Item</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Create Folder Modal -->
     <div id="create-folder-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
         <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
@@ -364,39 +453,6 @@
             <div class="flex justify-end space-x-2 pt-2">
                 <button onclick="closeModals()" class="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
                 <button onclick="createFolder()" class="px-5 py-2 text-xs font-semibold bg-[#4173B0] text-white rounded-xl shadow hover:bg-[#2B4C6D]">Create Folder</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Edit Item Modal -->
-    <div id="edit-item-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <div class="flex justify-between items-center">
-                <h3 class="text-lg font-bold text-[#2B4C6D]">Edit Audio Details & Tags</h3>
-                <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-lg"></i></button>
-            </div>
-            <input type="hidden" id="edit-item-id">
-            <div>
-                <label class="block text-xs font-semibold text-gray-600 mb-1">Title</label>
-                <input type="text" id="edit-title-input" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
-            </div>
-            <div>
-                <label class="block text-xs font-semibold text-gray-600 mb-1">Cover Image URL</label>
-                <input type="url" id="edit-cover-input" placeholder="https://..." class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
-            </div>
-            <div>
-                <label class="block text-xs font-semibold text-gray-600 mb-1">Folder</label>
-                <select id="edit-folder-select" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
-                    <option value="">(None - Ungrouped)</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-xs font-semibold text-gray-600 mb-1">Tags (comma separated)</label>
-                <input type="text" id="edit-tags-input" placeholder="audiobook, mystery, sci-fi" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#4173B0]">
-            </div>
-            <div class="flex justify-end space-x-2 pt-2">
-                <button onclick="closeModals()" class="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
-                <button onclick="saveItemEdits()" class="px-5 py-2 text-xs font-semibold bg-[#4173B0] text-white rounded-xl shadow hover:bg-[#2B4C6D]">Save Changes</button>
             </div>
         </div>
     </div>
@@ -426,27 +482,6 @@
         </div>
     </div>
 
-    <!-- Settings Modal -->
-    <div id="settings-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
-            <div class="flex justify-between items-center">
-                <h3 class="text-lg font-bold text-[#2B4C6D]">App Settings</h3>
-                <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-lg"></i></button>
-            </div>
-            <div class="pt-2 border-t border-gray-100 flex justify-between items-center">
-                <span class="text-xs text-gray-600 font-medium">Goodreads Integration</span>
-                <button onclick="openGoodreadsModal()" class="px-4 py-2 bg-[#C3D7EA] text-[#2B4C6D] hover:bg-[#b2c8de] rounded-xl text-xs font-semibold">Configure</button>
-            </div>
-            <div class="pt-2 border-t border-gray-100 flex justify-between items-center">
-                <span class="text-xs text-gray-600 font-medium">Export / Backup Library Data</span>
-                <button onclick="exportLibrary()" class="px-4 py-2 bg-gray-100 text-[#2B4C6D] hover:bg-gray-200 rounded-xl text-xs font-semibold">Export JSON</button>
-            </div>
-            <div class="flex justify-end pt-2">
-                <button onclick="closeModals()" class="px-5 py-2 text-xs font-semibold bg-[#4173B0] text-white rounded-xl shadow hover:bg-[#2B4C6D]">Done</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Search Modal -->
     <div id="search-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
         <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
@@ -454,7 +489,7 @@
                 <h3 class="text-lg font-bold text-[#2B4C6D]">Search & Tags</h3>
                 <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
-            <input type="text" id="search-input" placeholder="Search titles, folders, or #tags..." oninput="handleSearch(this.value)" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#4173B0]">
+            <input type="text" id="search-input" placeholder="Search titles, authors, folders, or #tags..." oninput="handleSearch(this.value)" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#4173B0]">
             <div id="tag-cloud" class="flex flex-wrap gap-1.5 pt-1"></div>
             <div id="search-results" class="max-h-60 overflow-y-auto space-y-2 pt-2"></div>
         </div>
@@ -468,6 +503,9 @@
             items: JSON.parse(localStorage.getItem('indybooks_items') || '[]'),
             folders: JSON.parse(localStorage.getItem('indybooks_folders') || '["Indie Mystery", "Podcasts"]'),
             goodreadsUser: localStorage.getItem('indybooks_goodreads') || null,
+            queue: JSON.parse(localStorage.getItem('indybooks_queue') || '[]'),
+            globalTrimStart: parseFloat(localStorage.getItem('indybooks_trim_start') || '0'),
+            globalTrimEnd: parseFloat(localStorage.getItem('indybooks_trim_end') || '0'),
             currentId: null,
             isPlaying: false,
             slothMode: false,
@@ -503,6 +541,7 @@
                 appState.items = data.map(item => ({
                     id: item.id,
                     title: item.title,
+                    author: item.author || 'Unknown Author',
                     url: item.audio_url,
                     folder: item.folder || '',
                     cover: item.cover_url || '',
@@ -525,102 +564,73 @@
                 .eq('id', itemId);
         }
 
-        function saveSupabaseConfig() {
-            const url = document.getElementById('supabase-url-input').value.trim();
-            const key = document.getElementById('supabase-key-input').value.trim();
-            if (!url || !key) return;
-            localStorage.setItem('indybooks_supabase_url', url);
-            localStorage.setItem('indybooks_supabase_key', key);
-            supabaseClient = supabase.createClient(url, key);
-            closeModals();
-        }
-
-        async function supabaseSignUp() {
-            if (!supabaseClient) return;
-            const email = document.getElementById('auth-email-input').value.trim();
-            const password = document.getElementById('auth-pass-input').value.trim();
-            const { error } = await supabaseClient.auth.signUp({ email, password });
-            if (error) alert(error.message);
-            else alert('Check your email for confirmation link.');
-        }
-
-        async function supabaseSignIn() {
-            if (!supabaseClient) return;
-            const email = document.getElementById('auth-email-input').value.trim();
-            const password = document.getElementById('auth-pass-input').value.trim();
-            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-            if (error) alert(error.message);
-            else {
-                currentUser = data.user;
-                updateAuthUI(true);
-                fetchUserLibrary(currentUser.id);
-                closeModals();
-            }
-        }
-
-        async function supabaseSignOut() {
-            if (supabaseClient) await supabaseClient.auth.signOut();
-            currentUser = null;
-            updateAuthUI(false);
-            closeModals();
-        }
-
-        function updateAuthUI(isLoggedIn) {
-            const unloggedView = document.getElementById('auth-unlogged-view');
-            const loggedView = document.getElementById('auth-logged-view');
-            const badge = document.getElementById('sync-status-badge');
-            const sub = document.getElementById('user-status-subtitle');
-
-            if (isLoggedIn && currentUser) {
-                unloggedView.classList.add('hidden');
-                loggedView.classList.remove('hidden');
-                document.getElementById('auth-user-email').innerText = currentUser.email;
-                badge.innerText = 'Synced';
-                badge.className = 'text-[10px] bg-green-600 text-white px-1.5 py-0.5 rounded-full font-medium';
-                sub.innerText = `Cloud Account: ${currentUser.email}`;
-            } else {
-                unloggedView.classList.remove('hidden');
-                loggedView.classList.add('hidden');
-                badge.innerText = 'Local';
-                badge.className = 'text-[10px] bg-[#EB8861] text-white px-1.5 py-0.5 rounded-full font-medium';
-                sub.innerText = 'Podcast & Audiobook Hub';
-            }
-        }
-
-        async function saveStateToCloud(item) {
-            if (!supabaseClient || !currentUser) return;
-            await supabaseClient.from('media_items').upsert({
-                id: item.id,
-                user_id: currentUser.id,
-                title: item.title,
-                type: 'audiobook',
-                audio_url: item.url,
-                cover_url: item.cover,
-                folder: item.folder,
-                tags: item.tags || [],
-                current_time: item.currentTime,
-                duration: item.duration,
-                speed: item.speed
-            });
-        }
-
         function saveState() {
             localStorage.setItem('indybooks_items', JSON.stringify(appState.items));
             localStorage.setItem('indybooks_folders', JSON.stringify(appState.folders));
+            localStorage.setItem('indybooks_queue', JSON.stringify(appState.queue));
+            localStorage.setItem('indybooks_trim_start', appState.globalTrimStart);
+            localStorage.setItem('indybooks_trim_end', appState.globalTrimEnd);
             if (appState.goodreadsUser) localStorage.setItem('indybooks_goodreads', appState.goodreadsUser);
             else localStorage.removeItem('indybooks_goodreads');
 
             if (appState.currentId) {
                 const cur = appState.items.find(i => i.id === appState.currentId);
-                if (cur) saveStateToCloud(cur);
+                if (cur && supabaseClient && currentUser) {
+                    supabaseClient.from('media_items').upsert({
+                        id: cur.id,
+                        user_id: currentUser.id,
+                        title: cur.title,
+                        author: cur.author,
+                        type: 'audiobook',
+                        audio_url: cur.url,
+                        cover_url: cur.cover,
+                        folder: cur.folder,
+                        tags: cur.tags || [],
+                        current_time: cur.currentTime,
+                        duration: cur.duration,
+                        speed: cur.speed
+                    });
+                }
             }
         }
 
         window.onload = function() {
+            document.getElementById('global-trim-start').value = appState.globalTrimStart;
+            document.getElementById('global-trim-end').value = appState.globalTrimEnd;
             renderLibrary();
             updateFolderDropdowns();
             updateGoodreadsUI();
+            updateQueueBadge();
         };
+
+        function updateGlobalTrim() {
+            appState.globalTrimStart = parseFloat(document.getElementById('global-trim-start').value) || 0;
+            appState.globalTrimEnd = parseFloat(document.getElementById('global-trim-end').value) || 0;
+            saveState();
+        }
+
+        // Cover Image Handlers (URL, Photo Library, Clipboard)
+        function pasteCoverFromClipboard(inputId) {
+            navigator.clipboard.readText().then(text => {
+                if (text && (text.startsWith('http') || text.startsWith('data:image'))) {
+                    document.getElementById(inputId).value = text;
+                } else {
+                    alert('Clipboard does not contain a valid image URL or data URI.');
+                }
+            }).catch(err => {
+                alert('Could not access clipboard. Please paste manually.');
+            });
+        }
+
+        function handleCoverImageUpload(event, inputId) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById(inputId).value = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
 
         function saveGoodreadsAccount() {
             const val = document.getElementById('goodreads-user-id').value.trim();
@@ -663,9 +673,11 @@
                     const cols = line.split(',');
                     if (cols.length > 1) {
                         const title = cols[1] ? cols[1].replace(/"/g, '').trim() : 'Goodreads Import';
+                        const author = cols[2] ? cols[2].replace(/"/g, '').trim() : 'Unknown Author';
                         const newItem = {
                             id: 'gr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
                             title: title,
+                            author: author,
                             url: '',
                             folder: 'Goodreads Books',
                             cover: '',
@@ -677,7 +689,6 @@
                         };
                         if (!appState.folders.includes('Goodreads Books')) appState.folders.push('Goodreads Books');
                         appState.items.push(newItem);
-                        saveStateToCloud(newItem);
                     }
                 });
                 saveState();
@@ -686,6 +697,70 @@
                 closeGoodreadsModal();
             };
             reader.readAsText(file);
+        }
+
+        // Play Queue Functions
+        function queueCurrentTrack() {
+            if (!appState.currentId) {
+                alert('No track currently loaded to queue.');
+                return;
+            }
+            if (!appState.queue.includes(appState.currentId)) {
+                appState.queue.push(appState.currentId);
+                saveState();
+                updateQueueBadge();
+                alert('Added track to play queue.');
+            } else {
+                alert('Track is already in the play queue.');
+            }
+        }
+
+        function openQueueModal() {
+            renderQueueList();
+            document.getElementById('queue-modal').classList.remove('hidden');
+            document.getElementById('queue-modal').classList.add('flex');
+        }
+
+        function renderQueueList() {
+            const list = document.getElementById('queue-list');
+            if (appState.queue.length === 0) {
+                list.innerHTML = '<div class="text-center text-xs text-gray-400 py-6">Play queue is empty.</div>';
+                return;
+            }
+            list.innerHTML = appState.queue.map((id, index) => {
+                const item = appState.items.find(i => i.id === id);
+                if (!item) return '';
+                return `
+                    <div class="py-2.5 flex items-center justify-between">
+                        <div class="flex items-center space-x-3 min-w-0 flex-1 cursor-pointer" onclick="playItem('${item.id}'); closeModals();">
+                            <span class="text-xs font-bold text-gray-400 w-5">${index + 1}.</span>
+                            <div class="min-w-0 flex-1">
+                                <h5 class="text-xs font-bold text-[#2B4C6D] truncate">${item.title}</h5>
+                                <p class="text-[10px] text-gray-500 truncate">${item.author}</p>
+                            </div>
+                        </div>
+                        <button onclick="removeFromQueue(${index})" class="text-red-500 hover:text-red-700 px-2 py-1"><i class="fa-solid fa-trash text-xs"></i></button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function removeFromQueue(index) {
+            appState.queue.splice(index, 1);
+            saveState();
+            renderQueueList();
+            updateQueueBadge();
+        }
+
+        function clearQueue() {
+            appState.queue = [];
+            saveState();
+            renderQueueList();
+            updateQueueBadge();
+        }
+
+        function updateQueueBadge() {
+            document.getElementById('queue-count-badge').innerText = appState.queue.length;
         }
 
         function playWildcard() {
@@ -700,6 +775,7 @@
             openPlayerModal();
         }
 
+        // Library Rendering
         function renderLibrary() {
             const container = document.getElementById('library-container');
             container.innerHTML = '';
@@ -711,7 +787,7 @@
                             <i class="fa-solid fa-headphones text-2xl"></i>
                         </div>
                         <h3 class="text-base font-bold text-[#2B4C6D]">Your Library is Empty</h3>
-                        <p class="text-xs text-gray-500 mt-1 max-w-xs mx-auto">Add an RSS feed via Supabase, link an audio URL, upload local files, or click Wildcard!</p>
+                        <p class="text-xs text-gray-500 mt-1 max-w-xs mx-auto">Add an RSS feed, link an audio URL, upload M4B/MP3/ZIP files, or click Wildcard!</p>
                     </div>
                 `;
                 return;
@@ -759,6 +835,7 @@
                         </div>
                         <div class="min-w-0 flex-1">
                             <h4 class="text-xs font-bold text-[#2B4C6D] truncate">${item.title}</h4>
+                            <p class="text-[10px] text-gray-500 truncate">${item.author || 'Unknown Author'}</p>
                             <div class="flex items-center space-x-2 mt-1">
                                 <div class="flex-1 bg-gray-200 h-1.5 rounded-full overflow-hidden max-w-[120px]">
                                     <div class="bg-[#4173B0] h-full" style="width: ${pct}%"></div>
@@ -775,6 +852,7 @@
             `;
         }
 
+        // Playback Logic
         function playItem(id) {
             const item = appState.items.find(i => i.id === id);
             if (!item) return;
@@ -789,13 +867,32 @@
             
             audioEl.onloadedmetadata = () => {
                 item.duration = audioEl.duration;
-                audioEl.currentTime = item.currentTime || 0;
+                // Apply global trim start if starting from beginning
+                if (!item.currentTime || item.currentTime < appState.globalTrimStart) {
+                    audioEl.currentTime = appState.globalTrimStart;
+                } else {
+                    audioEl.currentTime = item.currentTime;
+                }
                 audioEl.play();
                 appState.isPlaying = true;
                 updatePlayerUI();
                 renderLibrary();
             };
             audioEl.load();
+        }
+
+        function onAudioEnded() {
+            appState.isPlaying = false;
+            updatePlayerUI();
+
+            // Check if there's a next item in the queue
+            if (appState.queue.length > 0) {
+                const nextId = appState.queue.shift();
+                saveState();
+                updateQueueBadge();
+                playItem(nextId);
+                openPlayerModal();
+            }
         }
 
         function togglePlayPause() {
@@ -817,6 +914,14 @@
             if (!appState.currentId) return;
             const currentItem = appState.items.find(i => i.id === appState.currentId);
             if (!currentItem) return;
+
+            // Enforce Global Trim End if specified (> 0)
+            if (appState.globalTrimEnd > 0 && audioEl.currentTime >= (currentItem.duration - appState.globalTrimEnd)) {
+                audioEl.pause();
+                audioEl.currentTime = 0;
+                onAudioEnded();
+                return;
+            }
 
             currentItem.currentTime = audioEl.currentTime;
             currentItem.duration = audioEl.duration || currentItem.duration;
@@ -855,8 +960,9 @@
 
             if (currentItem) {
                 document.getElementById('mini-title').innerText = currentItem.title;
-                document.getElementById('mini-subtitle').innerText = currentItem.folder || 'Ungrouped';
+                document.getElementById('mini-subtitle').innerText = currentItem.author || currentItem.folder || 'Ungrouped';
                 document.getElementById('modal-title').innerText = currentItem.title;
+                document.getElementById('modal-author').innerText = currentItem.author || 'Unknown Author';
                 document.getElementById('modal-subtitle').innerText = currentItem.folder || 'IndyBooks Audio';
                 document.getElementById('modal-org-title').innerText = currentItem.title;
                 if (currentItem.cover) {
@@ -909,27 +1015,65 @@
             updatePlayerUI();
         }
 
-        function handleLocalFiles(event) {
+        // File Ingestion (.mp3, .m4b, .zip)
+        async function handleLocalFiles(event) {
             const files = event.target.files;
             if (!files || files.length === 0) return;
 
-            Array.from(files).forEach(file => {
-                const url = URL.createObjectURL(file);
-                const newItem = {
-                    id: 'item_' + Date.now() + Math.random().toString(36).substr(2, 5),
-                    title: file.name.replace(/\.[^/.]+$/, ""),
-                    url: url,
-                    folder: '',
-                    cover: '',
-                    tags: ['local'],
-                    currentTime: 0,
-                    duration: 0,
-                    speed: 1.0,
-                    bookmarks: []
-                };
-                appState.items.push(newItem);
-                saveStateToCloud(newItem);
-            });
+            for (const file of Array.from(files)) {
+                if (file.name.toLowerCase().endsWith('.zip')) {
+                    // Extract ZIP using JSZip
+                    try {
+                        const zip = new JSZip();
+                        const zipContent = await zip.loadAsync(file);
+                        const folderName = file.name.replace(/\.[^/.]+$/, "");
+                        if (!appState.folders.includes(folderName)) appState.folders.push(folderName);
+
+                        for (const [filename, zipEntry] of Object.entries(zipContent.files)) {
+                            if (zipEntry.dir) continue;
+                            const lower = filename.toLowerCase();
+                            if (lower.endsWith('.mp3') || lower.endsWith('.m4b') || lower.endsWith('.m4a') || lower.endsWith('.aac') || lower.endsWith('.wav')) {
+                                const blob = await zipEntry.async('blob');
+                                const url = URL.createObjectURL(blob);
+                                const titleClean = filename.split('/').pop().replace(/\.[^/.]+$/, "");
+                                const newItem = {
+                                    id: 'zip_' + Date.now() + Math.random().toString(36).substr(2, 5),
+                                    title: titleClean,
+                                    author: folderName,
+                                    url: url,
+                                    folder: folderName,
+                                    cover: '',
+                                    tags: ['zip-extract', 'audiobook'],
+                                    currentTime: 0,
+                                    duration: 0,
+                                    speed: 1.0,
+                                    bookmarks: []
+                                };
+                                appState.items.push(newItem);
+                            }
+                        }
+                    } catch (e) {
+                        alert('Could not parse ZIP file. Make sure it is valid.');
+                    }
+                } else {
+                    const url = URL.createObjectURL(file);
+                    const baseName = file.name.replace(/\.[^/.]+$/, "");
+                    const newItem = {
+                        id: 'item_' + Date.now() + Math.random().toString(36).substr(2, 5),
+                        title: baseName,
+                        author: 'Unknown Author',
+                        url: url,
+                        folder: '',
+                        cover: '',
+                        tags: ['local'],
+                        currentTime: 0,
+                        duration: 0,
+                        speed: 1.0,
+                        bookmarks: []
+                    };
+                    appState.items.push(newItem);
+                }
+            }
             saveState();
             renderLibrary();
             updateFolderDropdowns();
@@ -937,6 +1081,7 @@
 
         function addAudioFromUrl() {
             const titleInput = document.getElementById('direct-title-input').value.trim();
+            const authorInput = document.getElementById('direct-author-input').value.trim();
             const urlInput = document.getElementById('direct-url-input').value.trim();
             const coverInput = document.getElementById('direct-cover-input').value.trim();
             const folderSelect = document.getElementById('direct-folder-select').value;
@@ -946,6 +1091,7 @@
             const newItem = {
                 id: 'url_' + Date.now() + Math.random().toString(36).substr(2, 5),
                 title: titleInput || 'Linked Audio',
+                author: authorInput || 'Unknown Author',
                 url: urlInput,
                 folder: folderSelect,
                 cover: coverInput,
@@ -957,7 +1103,6 @@
             };
 
             appState.items.push(newItem);
-            saveStateToCloud(newItem);
             saveState();
             renderLibrary();
             closeModals();
@@ -967,55 +1112,19 @@
             const urlInput = document.getElementById('rss-url-input').value.trim();
             if (!urlInput) return;
 
-            if (supabaseClient) {
-                try {
-                    const { data, error } = await supabaseClient.functions.invoke('parse-rss', {
-                        body: { feedUrl: urlInput }
-                    });
-                    if (error) throw error;
-                    if (data && data.items) {
-                        const channelTitle = data.title || 'Podcast Feed';
-                        if (!appState.folders.includes(channelTitle)) appState.folders.push(channelTitle);
-                        data.items.forEach(ep => {
-                            const newItem = {
-                                id: 'rss_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-                                title: ep.title,
-                                url: ep.enclosureUrl,
-                                folder: channelTitle,
-                                cover: ep.image || '',
-                                tags: ['podcast'],
-                                currentTime: 0,
-                                duration: 0,
-                                speed: 1.0,
-                                bookmarks: []
-                            };
-                            appState.items.push(newItem);
-                            saveStateToCloud(newItem);
-                        });
-                        saveState();
-                        renderLibrary();
-                        updateFolderDropdowns();
-                        closeModals();
-                        return;
-                    }
-                } catch (edgeErr) {
-                    console.warn('Supabase edge function fallback triggered:', edgeErr);
-                }
-            }
-
-            // Fallback parser if Supabase Edge Function is not connected
             try {
                 const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(urlInput)}`);
                 const data = await res.json();
                 const parser = new DOMParser();
                 const xml = parser.parseFromString(data.contents, "text/xml");
                 const channelTitle = xml.querySelector('channel > title')?.textContent || 'Podcast Feed';
+                const channelAuthor = xml.querySelector('channel > author, channel > *|author, channel > *|owner > *|name')?.textContent || 'Podcast Creator';
                 const items = xml.querySelectorAll('item');
 
                 if (!appState.folders.includes(channelTitle)) appState.folders.push(channelTitle);
 
                 items.forEach((item, index) => {
-                    if (index > 20) return;
+                    if (index > 25) return;
                     const title = item.querySelector('title')?.textContent || 'Episode';
                     const enclosure = item.querySelector('enclosure');
                     const audioUrl = enclosure ? enclosure.getAttribute('url') : '';
@@ -1025,6 +1134,7 @@
                         const newItem = {
                             id: 'rss_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
                             title: title,
+                            author: channelAuthor,
                             url: audioUrl,
                             folder: channelTitle,
                             cover: itunesImage,
@@ -1035,7 +1145,6 @@
                             bookmarks: []
                         };
                         appState.items.push(newItem);
-                        saveStateToCloud(newItem);
                     }
                 });
                 saveState();
@@ -1069,9 +1178,10 @@
             });
         }
 
+        // Modal Controls
         function openPlayerModal() { document.getElementById('player-modal').classList.remove('translate-y-full'); }
         function closePlayerModal() { document.getElementById('player-modal').classList.add('translate-y-full'); }
-        function openAuthModal() { document.getElementById('auth-modal').classList.remove('hidden'); document.getElementById('auth-modal').classList.add('flex'); }
+        function openAuthModal() { alert('Supabase Cloud Sync configuration is available in the deployment guide.'); }
         
         function openGoodreadsModal() { 
             closeModals();
@@ -1101,6 +1211,7 @@
             if (!item) return;
             document.getElementById('edit-item-id').value = item.id;
             document.getElementById('edit-title-input').value = item.title;
+            document.getElementById('edit-author-input').value = item.author || '';
             document.getElementById('edit-cover-input').value = item.cover || '';
             document.getElementById('edit-folder-select').value = item.folder || '';
             document.getElementById('edit-tags-input').value = item.tags ? item.tags.join(', ') : '';
@@ -1123,11 +1234,11 @@
             const item = appState.items.find(i => i.id === id);
             if (!item) return;
             item.title = document.getElementById('edit-title-input').value.trim() || item.title;
+            item.author = document.getElementById('edit-author-input').value.trim() || item.author;
             item.cover = document.getElementById('edit-cover-input').value.trim() || item.cover;
             item.folder = document.getElementById('edit-folder-select').value;
             const rawTags = document.getElementById('edit-tags-input').value;
             item.tags = rawTags ? rawTags.split(',').map(t => t.trim()).filter(Boolean) : [];
-            saveStateToCloud(item);
             saveState();
             renderLibrary();
             closeModals();
@@ -1139,6 +1250,7 @@
             if (!item.bookmarks) item.bookmarks = [];
             item.bookmarks.push({ time: audioEl.currentTime, title: `Bookmark at ${formatTime(audioEl.currentTime)}` });
             saveState();
+            alert('Bookmark added!');
         }
 
         function renderBookmarksList() {
@@ -1167,11 +1279,13 @@
                 updatePlayerUI();
             }, minutes * 60 * 1000);
             closeModals();
+            alert(`Sleep timer set for ${minutes} minutes.`);
         }
 
         function cancelSleepTimer() {
             if (appState.sleepTimerTimeout) clearTimeout(appState.sleepTimerTimeout);
             closeModals();
+            alert('Sleep timer cancelled.');
         }
 
         function exportLibrary() {
@@ -1212,13 +1326,17 @@
             const q = query.toLowerCase();
             const matches = appState.items.filter(i => {
                 const matchTitle = i.title.toLowerCase().includes(q);
+                const matchAuthor = i.author && i.author.toLowerCase().includes(q);
                 const matchFolder = i.folder && i.folder.toLowerCase().includes(q);
                 const matchTag = i.tags && i.tags.some(t => `#${t.toLowerCase()}`.includes(q) || t.toLowerCase().includes(q));
-                return matchTitle || matchFolder || matchTag;
+                return matchTitle || matchAuthor || matchFolder || matchTag;
             });
             results.innerHTML = matches.length === 0 ? '<div class="text-xs text-gray-400 text-center py-4">No results found</div>' : matches.map(m => `
                 <div class="p-2 hover:bg-gray-50 rounded-xl cursor-pointer flex items-center justify-between" onclick="playItem('${m.id}'); closeModals();">
-                    <span class="text-xs font-semibold text-[#2B4C6D] truncate">${m.title}</span>
+                    <div>
+                        <span class="text-xs font-semibold text-[#2B4C6D] block truncate">${m.title}</span>
+                        <span class="text-[10px] text-gray-500">${m.author}</span>
+                    </div>
                     <span class="text-[10px] text-gray-400">${m.folder || 'Ungrouped'}</span>
                 </div>
             `).join('');
