@@ -29,6 +29,17 @@
             user-select: none;
             -webkit-user-select: none;
         }
+        /* Tailwind's h-full (height:100%) tracks the document's containing
+           block, which on mobile can run behind a collapsing browser toolbar.
+           dvh tracks the actually-visible viewport, so the mini-player and
+           safe-area padding land correctly on every phone/tablet/desktop
+           resolution instead of being sized for whichever device this was
+           last tested on. */
+        @supports (height: 100dvh) {
+            html, body {
+                height: 100dvh;
+            }
+        }
         ::-webkit-scrollbar {
             width: 4px;
             height: 4px;
@@ -712,7 +723,49 @@
             setupAudioContext();
             document.getElementById('global-start-trim').value = appState.startTrim;
             document.getElementById('global-end-trim').value = appState.endTrim;
+            registerServiceWorker();
         };
+
+        function registerServiceWorker() {
+            if (!('serviceWorker' in navigator)) return;
+            // A first-ever install also fires 'controllerchange' (uncontrolled
+            // -> controlled), which isn't an update - only reload when this tab
+            // was already being served by a worker, meaning a newer one just
+            // took over mid-session.
+            const hadController = !!navigator.serviceWorker.controller;
+
+            navigator.serviceWorker.register('./sw.js')
+                .catch(err => console.warn('Service worker registration failed:', err));
+
+            if (!hadController) return;
+
+            // sw.js calls skipWaiting()/clients.claim() unconditionally, so a
+            // new version takes control almost immediately. Once it does, its
+            // cache already has the fresh index.html - reload so this tab
+            // actually runs the new code instead of just quietly owning it for
+            // next time.
+            let reloadedOnce = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (reloadedOnce) return;
+                reloadedOnce = true;
+                window.location.reload();
+            });
+        }
+
+        // A tab losing focus (switching apps, locking the screen) can leave the
+        // AudioContext suspended by the browser's power-saving policy even
+        // though playback should continue. Resume it the moment we're back so
+        // audio that "kept playing" isn't silently dead on return.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && audioCtx && audioCtx.state === 'suspended' && appState.isPlaying) {
+                audioCtx.resume();
+            }
+        });
+        window.addEventListener('pageshow', () => {
+            if (audioCtx && audioCtx.state === 'suspended' && appState.isPlaying) {
+                audioCtx.resume();
+            }
+        });
 
         function setupAudioContext() {
             if (audioCtx) return;
