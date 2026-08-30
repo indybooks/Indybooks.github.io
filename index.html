@@ -728,6 +728,20 @@
 
         function registerServiceWorker() {
             if (!('serviceWorker' in navigator)) return;
+
+            // Earlier deployments of this app shipped (and later deleted) a
+            // differently-named worker (Service_Worker.js). A browser that
+            // registered that one has no idea this file exists and will
+            // keep intercepting every request with its old cache forever -
+            // nothing here ever told it to stop. Evict anything that isn't
+            // this exact script before registering it.
+            navigator.serviceWorker.getRegistrations().then(regs => {
+                regs.forEach(reg => {
+                    const active = reg.active || reg.waiting || reg.installing;
+                    if (active && !active.scriptURL.endsWith('/sw.js')) reg.unregister();
+                });
+            });
+
             // A first-ever install also fires 'controllerchange' (uncontrolled
             // -> controlled), which isn't an update - only reload when this tab
             // was already being served by a worker, meaning a newer one just
