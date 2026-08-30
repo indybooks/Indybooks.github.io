@@ -100,7 +100,7 @@
             <label class="bg-[#4173B0] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#2B4C6D] transition flex flex-col items-center justify-center text-xs font-semibold cursor-pointer">
                 <i class="fa-solid fa-file-arrow-up mb-1 text-sm text-[#EDCE7A]"></i>
                 Upload Audio
-                <input type="file" id="local-audio-input" accept="audio/*,.mp3,.m4a,.m4b,x-m4b,.aac,.wav,.ogg,.zip,audio/mp4,audio/x-m4b" multiple class="hidden" onchange="handleLocalFiles(event)">
+                <input type="file" id="local-audio-input" accept="audio/*,.mp3,.m4a,.m4b,.aac,.wav,.ogg,.zip,audio/mp4,audio/x-m4b" multiple class="hidden" onchange="handleLocalFiles(event)">
             </label>
             <button onclick="playWildcard()" class="bg-[#EB8861] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#d5734c] transition flex flex-col items-center justify-center text-xs font-semibold cursor-pointer" title="Wildcard: Play Random Track">
                 <i class="fa-solid fa-shuffle mb-1 text-sm text-white"></i>
@@ -166,7 +166,7 @@
     </div>
 
     <!-- Audio Element -->
-    <audio id="main-audio-element" ontimeupdate="onAudioTimeUpdate()" onended="onAudioEnded()" onloadedmetadata="onAudioMetadataLoaded()"></audio>
+    <audio id="main-audio-element" crossorigin="anonymous" ontimeupdate="onAudioTimeUpdate()" onended="onAudioEnded()" onloadedmetadata="onAudioMetadataLoaded()"></audio>
 
     <!-- Full Player Modal -->
     <div id="player-modal" class="fixed inset-0 bg-[#2B4C6D] z-50 flex flex-col text-white transform translate-y-full transition-transform duration-300">
@@ -1215,12 +1215,26 @@
             updatePlayerUI();
         }
 
+        // Some browsers/OSes never learned the .m4b (and occasionally .m4a/.aac)
+        // extension, so File.type comes back empty and <audio> can't tell what
+        // it's looking at. Re-wrap the blob with a MIME type we know is right.
+        function inferAudioMimeType(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            const map = {
+                m4b: 'audio/mp4', m4a: 'audio/mp4', mp3: 'audio/mpeg',
+                aac: 'audio/aac', wav: 'audio/wav', ogg: 'audio/ogg'
+            };
+            return map[ext] || '';
+        }
+
         function handleLocalFiles(event) {
             const files = event.target.files;
             if (!files || files.length === 0) return;
 
             Array.from(files).forEach(file => {
-                const url = URL.createObjectURL(file);
+                const mime = file.type || inferAudioMimeType(file.name);
+                const source = (mime && mime !== file.type) ? new Blob([file], { type: mime }) : file;
+                const url = URL.createObjectURL(source);
                 const baseName = file.name.replace(/\.[^/.]+$/, "");
                 const newItem = {
                     id: 'item_' + Date.now() + Math.random().toString(36).substr(2, 5),
@@ -1509,7 +1523,7 @@
 
         function closeModals() {
             document.querySelectorAll('[id$="-modal"]').forEach(m => {
-                if (m.id !== 'goodreads-modal') {
+                if (m.id !== 'goodreads-modal' && m.id !== 'player-modal') {
                     m.classList.add('hidden');
                     m.classList.remove('flex');
                 }
