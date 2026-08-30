@@ -40,6 +40,19 @@
                 height: 100dvh;
             }
         }
+        /* pt-safe/pb-safe are used on the header and player modal to clear a
+           phone's notch/status bar and home indicator, but they were never
+           actually defined anywhere - not a built-in Tailwind utility, no
+           plugin providing it either - so they'd always been no-ops. Desktop
+           has no notch to reveal that; on an iPhone (especially installed to
+           the home screen, where viewport-fit=cover applies) content was
+           rendering straight under the status bar. */
+        .pt-safe {
+            padding-top: env(safe-area-inset-top, 0px);
+        }
+        .pb-safe {
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+        }
         ::-webkit-scrollbar {
             width: 4px;
             height: 4px;
@@ -139,7 +152,7 @@
     </main>
 
     <!-- Persistent Mini Player Bar -->
-    <div id="mini-player" class="fixed bottom-0 left-0 right-0 bg-[#2B4C6D] text-white border-t border-white/10 shadow-2xl z-40 transition-transform duration-300">
+    <div id="mini-player" class="fixed bottom-0 left-0 right-0 bg-[#2B4C6D] text-white border-t border-white/10 shadow-2xl z-40 transition-transform duration-300 pb-safe">
         <div class="w-full bg-white/20 h-1.5 cursor-pointer relative" onclick="seekAudioBar(event)">
             <div id="mini-progress" class="bg-[#EDCE7A] h-full w-0 transition-all duration-150"></div>
         </div>
@@ -177,7 +190,7 @@
     </div>
 
     <!-- Audio Element -->
-    <audio id="main-audio-element" crossorigin="anonymous" ontimeupdate="onAudioTimeUpdate()" onended="onAudioEnded()" onloadedmetadata="onAudioMetadataLoaded()"></audio>
+    <audio id="main-audio-element" ontimeupdate="onAudioTimeUpdate()" onended="onAudioEnded()" onloadedmetadata="onAudioMetadataLoaded()"></audio>
 
     <!-- Full Player Modal -->
     <div id="player-modal" class="fixed inset-0 bg-[#2B4C6D] z-50 flex flex-col text-white transform translate-y-full transition-transform duration-300">
@@ -720,7 +733,6 @@
             renderLibrary();
             updateFolderDropdowns();
             updateGoodreadsUI();
-            setupAudioContext();
             document.getElementById('global-start-trim').value = appState.startTrim;
             document.getElementById('global-end-trim').value = appState.endTrim;
             registerServiceWorker();
@@ -781,9 +793,28 @@
             }
         });
 
+        // Routing the <audio> element through Web Audio (createMediaElementSource)
+        // is a one-way trip: once connected, the element's sound only reaches
+        // speakers via this graph. That's the only way to push volume past
+        // audioEl.volume's 1.0 ceiling, but it also opts the page out of iOS
+        // Safari's background-audio allowance, which is granted to a plain
+        // <audio> element but not to Web Audio processing. So this only runs
+        // lazily, the first time someone actually boosts past 100% - normal
+        // playback (the common case) stays on the native element and keeps
+        // playing when the screen locks or another app opens.
         function setupAudioContext() {
             if (audioCtx) return;
             try {
+                // A MediaElementSourceNode fed by a cross-origin resource
+                // without CORS approval is spec'd to output silence, not an
+                // error. crossOrigin only takes effect on the *next* load, so
+                // this can't rescue whatever's already playing, but it means
+                // the track after this one has a real chance of being audible
+                // once boosted. Left unset by default (see call site) so
+                // plain unboosted playback isn't forced into CORS mode, which
+                // would fail outright on any server that doesn't send CORS
+                // headers - most podcast/audiobook CDNs included.
+                audioEl.crossOrigin = 'anonymous';
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
                 audioCtx = new AudioContext();
                 const source = audioCtx.createMediaElementSource(audioEl);
@@ -797,6 +828,7 @@
 
         function adjustAppVolume(val) {
             const v = parseFloat(val);
+            if (!gainNode && v > 1.0) setupAudioContext();
             if (gainNode) {
                 gainNode.gain.value = v;
             } else {
