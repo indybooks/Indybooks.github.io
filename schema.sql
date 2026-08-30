@@ -171,7 +171,7 @@ create policy folders_delete on public.folders
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
   'audio', 'audio', false, 209715200,
-  array['audio/mpeg','audio/mp4','audio/aac','audio/m4a','audio/m4b',
+  array['audio/mpeg','audio/mp4','audio/aac','audio/m4a','audio/x-m4b','audio/m4b',
         'audio/wav','audio/ogg','audio/opus','audio/flac','audio/webm']
 )
 on conflict (id) do update
