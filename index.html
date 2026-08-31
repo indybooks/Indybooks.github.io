@@ -1122,7 +1122,7 @@
             `;
         }
 
-        function playItem(id) {
+        async function playItem(id) {
             if (audioCtx && audioCtx.state === 'suspended') {
                 audioCtx.resume();
             }
@@ -1130,6 +1130,28 @@
             if (!item) return;
 
             appState.currentId = id;
+
+            if (item.local && !freshLocalBlobIds.has(id)) {
+                // item.url is a blob: URL restored from localStorage, which
+                // died the moment this page session started (see the
+                // "Local file storage" note above). Re-mint one from the
+                // actual bytes IndexedDB has on file for this item.
+                let blob = null;
+                try {
+                    blob = await loadLocalAudio(id);
+                } catch (e) {
+                    console.error('IndexedDB lookup failed for local file', id, e);
+                }
+                if (!blob) {
+                    alert("This file's saved data is no longer available on this device (browser storage may have been cleared). Please re-upload it.");
+                    if (appState.currentId === id) appState.currentId = null;
+                    return;
+                }
+                if (item.url && item.url.startsWith('blob:')) URL.revokeObjectURL(item.url);
+                item.url = URL.createObjectURL(blob);
+                freshLocalBlobIds.add(id);
+            }
+
             if (!item.url) {
                 alert('This item is a Goodreads log or missing a direct audio stream URL.');
                 return;
@@ -1172,11 +1194,17 @@
 
         function deleteItem(id) {
             if (!confirm('Are you sure you want to delete this audio item?')) return;
+            const item = appState.items.find(i => i.id === id);
             if (appState.currentId === id) {
                 audioEl.pause();
                 appState.currentId = null;
                 appState.isPlaying = false;
                 updatePlayerUI();
+            }
+            if (item && item.local) {
+                if (item.url && item.url.startsWith('blob:')) URL.revokeObjectURL(item.url);
+                freshLocalBlobIds.delete(id);
+                deleteLocalAudio(id);
             }
             appState.items = appState.items.filter(i => i.id !== id);
             appState.selectedItemIds = appState.selectedItemIds.filter(selId => selId !== id);
@@ -1327,6 +1355,67 @@
             return map[ext] || '';
         }
 
+        // --- Local file storage (IndexedDB) --------------------------------
+        // URL.createObjectURL() blob: URLs only live for the page's current
+        // session - closing and reopening the app (or even just reloading)
+        // invalidates them. Locally-uploaded files used to play fine once,
+        // then fail forever afterward with a misleading "codec support"
+        // error, because item.url was a dead blob: URL restored from
+        // localStorage. IndexedDB holds the actual file bytes durably, so a
+        // fresh, valid blob URL can be minted from them on every launch.
+        const LOCAL_DB_NAME = 'indybooks_files';
+        const LOCAL_DB_STORE = 'audio';
+        let localDbPromise = null;
+        // Ids whose blob: URL was minted in *this* page session, so playItem
+        // knows item.url is trustworthy without a redundant IndexedDB round trip.
+        const freshLocalBlobIds = new Set();
+
+        function openLocalDb() {
+            if (localDbPromise) return localDbPromise;
+            localDbPromise = new Promise((resolve, reject) => {
+                if (!window.indexedDB) { reject(new Error('IndexedDB unavailable')); return; }
+                const req = indexedDB.open(LOCAL_DB_NAME, 1);
+                req.onupgradeneeded = () => req.result.createObjectStore(LOCAL_DB_STORE);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+            return localDbPromise;
+        }
+
+        async function storeLocalAudio(id, blob) {
+            const db = await openLocalDb();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(LOCAL_DB_STORE, 'readwrite');
+                tx.objectStore(LOCAL_DB_STORE).put(blob, id);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        async function loadLocalAudio(id) {
+            const db = await openLocalDb();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(LOCAL_DB_STORE, 'readonly');
+                const req = tx.objectStore(LOCAL_DB_STORE).get(id);
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function deleteLocalAudio(id) {
+            try {
+                const db = await openLocalDb();
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction(LOCAL_DB_STORE, 'readwrite');
+                    tx.objectStore(LOCAL_DB_STORE).delete(id);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            } catch (e) {
+                console.warn('Could not delete local audio from IndexedDB:', e);
+            }
+        }
+
         function handleLocalFiles(event) {
             const files = event.target.files;
             if (!files || files.length === 0) return;
@@ -1341,6 +1430,7 @@
                     title: baseName,
                     author: file.name.endsWith('.m4b') ? 'Audiobook' : 'Local Import',
                     url: url,
+                    local: true,
                     folder: file.name.endsWith('.m4b') ? 'Audiobooks' : '',
                     cover: '',
                     tags: ['local', file.name.split('.').pop().toLowerCase()],
@@ -1354,7 +1444,14 @@
                     appState.folderColors['Audiobooks'] = '#4173B0';
                 }
                 appState.items.push(newItem);
+                freshLocalBlobIds.add(newItem.id);
                 saveStateToCloud(newItem);
+                // The blob: URL above only works for this page session -
+                // persist the actual bytes so playback survives closing and
+                // reopening the app.
+                storeLocalAudio(newItem.id, source).catch(err => {
+                    console.error('Could not save local file for offline playback:', err);
+                });
             });
             saveState();
             renderLibrary();
