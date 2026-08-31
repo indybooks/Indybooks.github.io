@@ -92,6 +92,10 @@
             </div>
         </div>
         <div class="flex items-center space-x-2">
+            <button onclick="openQueueModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer relative" title="Play Queue">
+                <i class="fa-solid fa-list-ol text-sm"></i>
+                <span id="queue-count-badge" class="hidden absolute -top-1 -right-1 bg-[#EB8861] text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center">0</span>
+            </button>
             <button onclick="openSearchModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Search">
                 <i class="fa-solid fa-search text-sm"></i>
             </button>
@@ -515,6 +519,21 @@
         </div>
     </div>
 
+    <!-- Play Queue Modal -->
+    <div id="queue-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center">
+                <h3 class="text-lg font-bold text-[#2B4C6D]">Play Queue</h3>
+                <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <p class="text-xs text-gray-500">Tracks play in this order once the current item finishes.</p>
+            <div id="queue-list" class="flex-1 overflow-y-auto space-y-2 divide-y divide-gray-100"></div>
+            <div class="flex justify-end pt-2 border-t border-gray-100">
+                <button onclick="clearQueue()" class="px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 rounded-xl cursor-pointer">Clear Queue</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Settings Modal -->
     <div id="settings-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
         <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
@@ -569,6 +588,7 @@
             folders: JSON.parse(localStorage.getItem('indybooks_folders') || '["Indie Mystery", "Podcasts"]'),
             folderColors: JSON.parse(localStorage.getItem('indybooks_folder_colors') || '{}'),
             collapsedFolders: JSON.parse(localStorage.getItem('indybooks_collapsed') || '[]'),
+            queue: JSON.parse(localStorage.getItem('indybooks_queue') || '[]'),
             selectedItemIds: [],
             goodreadsUser: localStorage.getItem('indybooks_goodreads') || null,
             startTrim: parseInt(localStorage.getItem('indybooks_start_trim') || '0', 10),
@@ -719,6 +739,7 @@
             localStorage.setItem('indybooks_folders', JSON.stringify(appState.folders));
             localStorage.setItem('indybooks_folder_colors', JSON.stringify(appState.folderColors));
             localStorage.setItem('indybooks_collapsed', JSON.stringify(appState.collapsedFolders));
+            localStorage.setItem('indybooks_queue', JSON.stringify(appState.queue));
             localStorage.setItem('indybooks_start_trim', appState.startTrim);
             localStorage.setItem('indybooks_end_trim', appState.endTrim);
             if (appState.goodreadsUser) localStorage.setItem('indybooks_goodreads', appState.goodreadsUser);
@@ -734,6 +755,7 @@
             renderLibrary();
             updateFolderDropdowns();
             updateGoodreadsUI();
+            updateQueueBadge();
             document.getElementById('global-start-trim').value = appState.startTrim;
             document.getElementById('global-end-trim').value = appState.endTrim;
             registerServiceWorker();
@@ -935,6 +957,35 @@
             renderLibrary();
         }
 
+        // Which bucket renderLibrary() would group an item into: a real,
+        // still-existing folder, or the ungrouped bucket otherwise. Mirrors
+        // the same fallback renderLibrary() uses so reordering matches what's
+        // actually on screen.
+        function libraryGroupOf(item) {
+            return (item.folder && appState.folders.includes(item.folder)) ? item.folder : '';
+        }
+
+        // Reorders within a folder (or within the ungrouped bucket) by
+        // swapping this item's position in appState.items with its nearest
+        // neighbor *in the same group* - items from other folders in between
+        // don't count, since renderLibrary() filters per group before display.
+        function moveItem(id, direction, event) {
+            if (event) event.stopPropagation();
+            const item = appState.items.find(i => i.id === id);
+            if (!item) return;
+            const group = libraryGroupOf(item);
+            const groupIndices = [];
+            appState.items.forEach((it, idx) => { if (libraryGroupOf(it) === group) groupIndices.push(idx); });
+            const posInGroup = groupIndices.indexOf(appState.items.indexOf(item));
+            const swapWith = direction === 'up' ? posInGroup - 1 : posInGroup + 1;
+            if (swapWith < 0 || swapWith >= groupIndices.length) return;
+            const a = groupIndices[posInGroup];
+            const b = groupIndices[swapWith];
+            [appState.items[a], appState.items[b]] = [appState.items[b], appState.items[a]];
+            saveState();
+            renderLibrary();
+        }
+
         function toggleItemSelection(itemId, event) {
             event.stopPropagation();
             if (appState.selectedItemIds.includes(itemId)) {
@@ -1073,7 +1124,7 @@
                         </div>
                     </div>
                     ${!isCollapsed ? `<div class="divide-y divide-gray-100">
-                        ${folderItems.length === 0 ? '<div class="p-3 text-xs text-gray-400 italic text-center">Folder is empty</div>' : folderItems.map(item => renderItemCard(item)).join('')}
+                        ${folderItems.length === 0 ? '<div class="p-3 text-xs text-gray-400 italic text-center">Folder is empty</div>' : folderItems.map((item, idx) => renderItemCard(item, idx === 0, idx === folderItems.length - 1)).join('')}
                     </div>` : ''}
                 `;
                 container.appendChild(folderEl);
@@ -1083,12 +1134,12 @@
             if (ungroupedItems.length > 0) {
                 const ungroupedEl = document.createElement('div');
                 ungroupedEl.className = 'bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-100';
-                ungroupedEl.innerHTML = ungroupedItems.map(item => renderItemCard(item)).join('');
+                ungroupedEl.innerHTML = ungroupedItems.map((item, idx) => renderItemCard(item, idx === 0, idx === ungroupedItems.length - 1)).join('');
                 container.appendChild(ungroupedEl);
             }
         }
 
-        function renderItemCard(item) {
+        function renderItemCard(item, isFirst, isLast) {
             const pct = item.duration ? Math.min(100, Math.round((item.currentTime / item.duration) * 100)) : 0;
             const timeRemaining = item.duration ? formatTime(item.duration - item.currentTime) : '--:--';
             const isCurrent = appState.currentId === item.id;
@@ -1097,6 +1148,10 @@
 
             return `
                 <div class="p-3 flex items-center justify-between hover:bg-gray-50/80 transition ${isCurrent ? 'bg-[#C3D7EA]/20 border-l-4 border-[#4173B0]' : ''}">
+                    <div class="flex flex-col shrink-0 mr-1">
+                        <button onclick="moveItem('${item.id}', 'up', event)" ${isFirst ? 'disabled' : ''} class="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-[#4173B0] disabled:opacity-25 disabled:hover:text-gray-300 cursor-pointer disabled:cursor-default" title="Move up"><i class="fa-solid fa-chevron-up text-[9px]"></i></button>
+                        <button onclick="moveItem('${item.id}', 'down', event)" ${isLast ? 'disabled' : ''} class="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-[#4173B0] disabled:opacity-25 disabled:hover:text-gray-300 cursor-pointer disabled:cursor-default" title="Move down"><i class="fa-solid fa-chevron-down text-[9px]"></i></button>
+                    </div>
                     <div class="flex items-center space-x-3 flex-1 min-w-0 cursor-pointer" onclick="playItem('${item.id}')">
                         <input type="checkbox" ${isChecked ? 'checked' : ''} onclick="toggleItemSelection('${item.id}', event)" class="w-4 h-4 accent-[#4173B0] rounded cursor-pointer shrink-0">
                         <div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0 shadow-sm flex items-center justify-center">
@@ -1115,6 +1170,7 @@
                         </div>
                     </div>
                     <div class="flex items-center space-x-1 ml-2">
+                        <button onclick="addToQueue('${item.id}', event)" class="w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Add to Queue"><i class="fa-solid fa-list-ol text-xs"></i></button>
                         <button onclick="openEditModal('${item.id}')" class="w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Edit"><i class="fa-solid fa-ellipsis-vertical text-xs"></i></button>
                         <button onclick="deleteItem('${item.id}')" class="w-8 h-8 rounded-full hover:bg-red-50 flex items-center justify-center text-red-500 cursor-pointer" title="Delete"><i class="fa-solid fa-trash text-xs"></i></button>
                     </div>
@@ -1208,6 +1264,10 @@
             }
             appState.items = appState.items.filter(i => i.id !== id);
             appState.selectedItemIds = appState.selectedItemIds.filter(selId => selId !== id);
+            if (appState.queue.includes(id)) {
+                appState.queue = appState.queue.filter(qid => qid !== id);
+                updateQueueBadge();
+            }
             updateBulkBar();
             saveState();
             renderLibrary();
@@ -1261,6 +1321,14 @@
         }
 
         function onAudioEnded() {
+            if (appState.queue.length > 0) {
+                const nextId = appState.queue.shift();
+                saveState();
+                updateQueueBadge();
+                if (document.getElementById('queue-modal').classList.contains('flex')) renderQueueList();
+                playItem(nextId);
+                return;
+            }
             appState.isPlaying = false;
             updatePlayerUI();
         }
@@ -1775,6 +1843,92 @@
                     <button onclick="audioEl.currentTime = ${b.time}; closeModals();" class="px-3 py-1 bg-[#4173B0] text-white text-xs rounded-lg cursor-pointer">Jump</button>
                 </div>
             `).join('');
+        }
+
+        // --- Play Queue -----------------------------------------------------
+        // appState.queue is an array of item ids, played in order once the
+        // current track ends (see onAudioEnded). It's separate from the
+        // library's own ordering - queuing a track doesn't move or duplicate
+        // it in the library, it's just "play this next".
+
+        function addToQueue(id, event) {
+            if (event) event.stopPropagation();
+            appState.queue.push(id);
+            saveState();
+            updateQueueBadge();
+            if (document.getElementById('queue-modal').classList.contains('flex')) renderQueueList();
+        }
+
+        function removeFromQueue(index) {
+            appState.queue.splice(index, 1);
+            saveState();
+            updateQueueBadge();
+            renderQueueList();
+        }
+
+        function moveQueueItem(index, direction) {
+            const target = direction === 'up' ? index - 1 : index + 1;
+            if (target < 0 || target >= appState.queue.length) return;
+            [appState.queue[index], appState.queue[target]] = [appState.queue[target], appState.queue[index]];
+            saveState();
+            renderQueueList();
+        }
+
+        function playQueueItemNow(index) {
+            const id = appState.queue[index];
+            appState.queue.splice(index, 1);
+            saveState();
+            updateQueueBadge();
+            renderQueueList();
+            playItem(id);
+        }
+
+        function clearQueue() {
+            appState.queue = [];
+            saveState();
+            updateQueueBadge();
+            renderQueueList();
+        }
+
+        function updateQueueBadge() {
+            const badge = document.getElementById('queue-count-badge');
+            if (appState.queue.length > 0) {
+                badge.innerText = appState.queue.length;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        function openQueueModal() {
+            renderQueueList();
+            document.getElementById('queue-modal').classList.remove('hidden');
+            document.getElementById('queue-modal').classList.add('flex');
+        }
+
+        function renderQueueList() {
+            const list = document.getElementById('queue-list');
+            if (appState.queue.length === 0) {
+                list.innerHTML = '<div class="text-center text-xs text-gray-400 py-6">Queue is empty. Use the <i class="fa-solid fa-list-ol"></i> button on a track to add it.</div>';
+                return;
+            }
+            list.innerHTML = appState.queue.map((id, idx) => {
+                const item = appState.items.find(i => i.id === id);
+                if (!item) return '';
+                return `
+                <div class="py-2.5 flex items-center justify-between gap-2">
+                    <div class="flex flex-col shrink-0">
+                        <button onclick="moveQueueItem(${idx}, 'up')" ${idx === 0 ? 'disabled' : ''} class="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-[#4173B0] disabled:opacity-25 disabled:cursor-default cursor-pointer"><i class="fa-solid fa-chevron-up text-[9px]"></i></button>
+                        <button onclick="moveQueueItem(${idx}, 'down')" ${idx === appState.queue.length - 1 ? 'disabled' : ''} class="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-[#4173B0] disabled:opacity-25 disabled:cursor-default cursor-pointer"><i class="fa-solid fa-chevron-down text-[9px]"></i></button>
+                    </div>
+                    <div class="min-w-0 flex-1 cursor-pointer" onclick="playQueueItemNow(${idx})">
+                        <h5 class="text-xs font-bold text-[#2B4C6D] truncate">${item.title}</h5>
+                        <span class="text-[10px] text-gray-400 truncate">${item.author || 'Unknown Author'}</span>
+                    </div>
+                    <button onclick="removeFromQueue(${idx})" class="w-7 h-7 rounded-full hover:bg-red-50 flex items-center justify-center text-red-500 cursor-pointer shrink-0" title="Remove from queue"><i class="fa-solid fa-xmark text-xs"></i></button>
+                </div>
+            `;
+            }).join('');
         }
 
         function setSleepTimer(minutes) {
