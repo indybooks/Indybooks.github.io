@@ -581,6 +581,10 @@
     <script>
         const SUPABASE_URL = 'https://rpgueqafknvrwvrbzixd.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade';
+        // Must match the bucket name and file_size_limit schema.sql configures
+        // (section 5, "Storage — uploaded audio").
+        const AUDIO_BUCKET = 'audio';
+        const CLOUD_MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
         let supabaseClient = null;
         let currentUser = null;
 
@@ -643,6 +647,14 @@
                 title: item.title,
                 author: item.author || '',
                 url: item.audio_url,
+                storagePath: item.storage_path || null,
+                // A row with a storage_path is a "local-type" item (its
+                // audio lives in Storage/IndexedDB, not at a direct URL) on
+                // every device, not just the one that uploaded it -
+                // playItem() resolves the actual bytes per-device (its own
+                // IndexedDB first, then a cloud download) regardless of
+                // this flag.
+                local: !!item.storage_path,
                 folder: item.folder || '',
                 cover: item.cover_url || '',
                 tags: item.tags || [],
@@ -662,7 +674,19 @@
             // cloud doesn't know about instead of discarding them.
             const cloudIds = new Set(cloudItems.map(i => i.id));
             const localOnly = appState.items.filter(i => !cloudIds.has(i.id));
-            appState.items = [...cloudItems, ...localOnly];
+            const merged = cloudItems.map(cloudItem => {
+                // A cloud row's url is intentionally blank for storage-backed
+                // items (see saveStateToCloud). If this device already
+                // minted a live blob: URL for it this session, keep that -
+                // otherwise the very device that uploaded the file would
+                // lose its own working playback URL on the next sync.
+                const localMatch = appState.items.find(i => i.id === cloudItem.id);
+                if (localMatch && freshLocalBlobIds.has(cloudItem.id)) {
+                    return { ...cloudItem, url: localMatch.url };
+                }
+                return cloudItem;
+            });
+            appState.items = [...merged, ...localOnly];
             saveState();
             renderLibrary();
         }
@@ -737,20 +761,24 @@
 
         async function saveStateToCloud(item) {
             if (!supabaseClient || !currentUser) return;
-            // A local upload's url is a blob: URL, meaningless outside this
-            // browser tab's session (see the "Local file storage" note near
-            // handleLocalFiles). Syncing it would create a cloud row that
-            // looks successfully synced but can never actually play
-            // anywhere, and would feed a dead URL back into this same
-            // device via fetchUserLibrary()'s merge on the next pull.
-            if (item.local) return;
+            // A local item only has something worth syncing once its bytes
+            // have actually reached Storage (storagePath set by
+            // uploadLocalAudioToCloud) - before that, item.url is just a
+            // blob: URL, meaningless outside this browser tab's session.
+            // Syncing it early would create a cloud row that looks synced
+            // but can never actually play anywhere.
+            if (item.local && !item.storagePath) return;
             const { error } = await supabaseClient.from('media_items').upsert({
                 id: item.id,
                 user_id: currentUser.id,
                 title: item.title,
                 author: item.author || '',
                 type: 'audiobook',
-                audio_url: item.url,
+                // storage_path is the source of truth once set; leave
+                // audio_url blank rather than storing a blob: URL that's
+                // meaningless on every device but the one that uploaded it.
+                audio_url: item.storagePath ? '' : (item.url || ''),
+                storage_path: item.storagePath || null,
                 cover_url: item.cover,
                 folder: item.folder,
                 tags: item.tags || [],
@@ -768,6 +796,55 @@
             if (!supabaseClient || !currentUser) return;
             const { error } = await supabaseClient.from('media_items').delete().eq('id', id).eq('user_id', currentUser.id);
             if (error) console.error('Cloud delete failed for', id, error.message);
+        }
+
+        // --- Cloud Storage for local uploads --------------------------------
+        // Local files otherwise only ever exist in this browser's IndexedDB
+        // (see "Local file storage" near handleLocalFiles), which is why
+        // they never showed up on a second device. Uploading the actual
+        // bytes to Supabase Storage - keyed '<user_id>/<item_id>', matching
+        // the RLS policies in schema.sql - makes them fetchable from
+        // anywhere the user signs in.
+
+        async function uploadLocalAudioToCloud(item, blob) {
+            if (!supabaseClient || !currentUser) return;
+            if (blob.size > CLOUD_MAX_UPLOAD_BYTES) {
+                console.warn(`Skipping cloud sync for "${item.title}": ${(blob.size / 1e6).toFixed(0)}MB exceeds the ${(CLOUD_MAX_UPLOAD_BYTES / 1e6).toFixed(0)}MB cross-device sync limit. It will keep playing on this device.`);
+                return;
+            }
+            const path = `${currentUser.id}/${item.id}`;
+            const { error } = await supabaseClient.storage.from(AUDIO_BUCKET).upload(path, blob, {
+                upsert: true,
+                contentType: blob.type || 'application/octet-stream',
+                cacheControl: '3600',
+            });
+            if (error) {
+                console.error('Cloud audio upload failed for', item.id, error.message);
+                return;
+            }
+            item.storagePath = path;
+            saveState();
+        }
+
+        async function downloadCloudAudio(path) {
+            if (!supabaseClient) return null;
+            const { data, error } = await supabaseClient.storage.from(AUDIO_BUCKET).createSignedUrl(path, 3600);
+            if (error || !data) {
+                console.error('Could not get a signed URL for', path, error && error.message);
+                return null;
+            }
+            const res = await fetch(data.signedUrl);
+            if (!res.ok) {
+                console.error('Cloud audio download failed for', path, res.status);
+                return null;
+            }
+            return await res.blob();
+        }
+
+        async function removeCloudAudio(path) {
+            if (!supabaseClient) return;
+            const { error } = await supabaseClient.storage.from(AUDIO_BUCKET).remove([path]);
+            if (error) console.warn('Cloud audio removal failed for', path, error.message);
         }
 
         function saveState() {
@@ -1234,8 +1311,23 @@
                 } catch (e) {
                     console.error('IndexedDB lookup failed for local file', id, e);
                 }
+                if (!blob && item.storagePath) {
+                    // Not cached on this device - e.g. it was uploaded from
+                    // a different one. Pull it from cloud storage and cache
+                    // it here so it plays offline afterward too, the same
+                    // as any other local file.
+                    try {
+                        blob = await downloadCloudAudio(item.storagePath);
+                        if (blob) await storeLocalAudio(id, blob);
+                    } catch (e) {
+                        console.error('Cloud audio download failed for', id, e);
+                    }
+                }
                 if (!blob) {
-                    alert("This file's saved data is no longer available on this device (browser storage may have been cleared). Please re-upload it.");
+                    const msg = item.storagePath
+                        ? "Couldn't download this file from the cloud. Check your connection and try again."
+                        : "This file's saved data is no longer available on this device (browser storage may have been cleared). Please re-upload it.";
+                    alert(msg);
                     if (appState.currentId === id) appState.currentId = null;
                     return;
                 }
@@ -1300,12 +1392,16 @@
                 if (item.url && item.url.startsWith('blob:')) URL.revokeObjectURL(item.url);
                 freshLocalBlobIds.delete(id);
                 deleteLocalAudio(id);
-            } else {
-                // Local items were never uploaded (see saveStateToCloud), so
-                // there's nothing to delete there. For anything that was
-                // synced, delete it from the cloud too - otherwise the next
-                // fetchUserLibrary() pull would merge the old cloud row
-                // back in, resurrecting an item you just deleted.
+                if (item.storagePath) removeCloudAudio(item.storagePath);
+            }
+            if (!item || !item.local || item.storagePath) {
+                // Skip only a local item that was never uploaded (no
+                // storagePath) - there's no media_items row for it to
+                // delete. Everything else (direct-URL/RSS items, or a local
+                // item that did make it to cloud storage) needs its row
+                // removed too, otherwise the next fetchUserLibrary() pull
+                // would merge it back in, resurrecting an item you just
+                // deleted.
                 deleteStateFromCloud(id);
             }
             appState.items = appState.items.filter(i => i.id !== id);
@@ -1574,13 +1670,16 @@
                 }
                 appState.items.push(newItem);
                 freshLocalBlobIds.add(newItem.id);
-                saveStateToCloud(newItem);
+                saveStateToCloud(newItem); // no-op today - no storagePath until the upload below finishes
                 // The blob: URL above only works for this page session -
                 // persist the actual bytes so playback survives closing and
                 // reopening the app.
-                storeLocalAudio(newItem.id, source).catch(err => {
-                    console.error('Could not save local file for offline playback:', err);
-                });
+                storeLocalAudio(newItem.id, source)
+                    .then(() => uploadLocalAudioToCloud(newItem, source))
+                    .then(() => { if (newItem.storagePath) saveStateToCloud(newItem); })
+                    .catch(err => {
+                        console.error('Could not save local file for offline playback:', err);
+                    });
             });
             saveState();
             renderLibrary();
