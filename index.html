@@ -630,23 +630,41 @@
                 .from('media_items')
                 .select('*, bookmarks(*)')
                 .eq('user_id', userId);
-            if (!error && data && data.length > 0) {
-                appState.items = data.map(item => ({
-                    id: item.id,
-                    title: item.title,
-                    author: item.author || '',
-                    url: item.audio_url,
-                    folder: item.folder || '',
-                    cover: item.cover_url || '',
-                    tags: item.tags || [],
-                    currentTime: item.current_time || 0,
-                    duration: item.duration || 0,
-                    speed: item.speed || 1.0,
-                    bookmarks: item.bookmarks ? item.bookmarks.map(b => ({ time: b.time, title: b.formatted_time || `Bookmark at ${formatTime(b.time)}` })) : []
-                }));
-                saveState();
-                renderLibrary();
+            if (error) {
+                // This used to fail silently, which is how a broken sync
+                // could look "successful" while quietly never happening.
+                console.error('Cloud library fetch failed:', error.message);
+                return;
             }
+            if (!data) return;
+
+            const cloudItems = data.map(item => ({
+                id: item.id,
+                title: item.title,
+                author: item.author || '',
+                url: item.audio_url,
+                folder: item.folder || '',
+                cover: item.cover_url || '',
+                tags: item.tags || [],
+                currentTime: item.current_time || 0,
+                duration: item.duration || 0,
+                speed: item.speed || 1.0,
+                bookmarks: item.bookmarks ? item.bookmarks.map(b => ({ time: b.time, title: b.formatted_time || `Bookmark at ${formatTime(b.time)}` })) : []
+            }));
+
+            // Merge, never replace wholesale: this used to overwrite
+            // appState.items outright, which meant anything only on this
+            // device - local uploads (their audio_url is a meaningless
+            // blob: URL now excluded from cloud sync below anyway), or
+            // anything added while a prior upload had silently failed -
+            // was permanently deleted the instant this ran, including via
+            // the automatic check on every page load. Keep local items the
+            // cloud doesn't know about instead of discarding them.
+            const cloudIds = new Set(cloudItems.map(i => i.id));
+            const localOnly = appState.items.filter(i => !cloudIds.has(i.id));
+            appState.items = [...cloudItems, ...localOnly];
+            saveState();
+            renderLibrary();
         }
 
         async function syncPlaybackProgress(itemId, currentTime) {
@@ -719,7 +737,14 @@
 
         async function saveStateToCloud(item) {
             if (!supabaseClient || !currentUser) return;
-            await supabaseClient.from('media_items').upsert({
+            // A local upload's url is a blob: URL, meaningless outside this
+            // browser tab's session (see the "Local file storage" note near
+            // handleLocalFiles). Syncing it would create a cloud row that
+            // looks successfully synced but can never actually play
+            // anywhere, and would feed a dead URL back into this same
+            // device via fetchUserLibrary()'s merge on the next pull.
+            if (item.local) return;
+            const { error } = await supabaseClient.from('media_items').upsert({
                 id: item.id,
                 user_id: currentUser.id,
                 title: item.title,
@@ -733,6 +758,16 @@
                 duration: item.duration,
                 speed: item.speed
             });
+            // This used to be silently swallowed, which is how a library
+            // could look "synced" while cloud writes were actually failing
+            // (bad schema, RLS denial, etc.) the whole time.
+            if (error) console.error('Cloud save failed for', item.id, error.message);
+        }
+
+        async function deleteStateFromCloud(id) {
+            if (!supabaseClient || !currentUser) return;
+            const { error } = await supabaseClient.from('media_items').delete().eq('id', id).eq('user_id', currentUser.id);
+            if (error) console.error('Cloud delete failed for', id, error.message);
         }
 
         function saveState() {
@@ -1265,6 +1300,13 @@
                 if (item.url && item.url.startsWith('blob:')) URL.revokeObjectURL(item.url);
                 freshLocalBlobIds.delete(id);
                 deleteLocalAudio(id);
+            } else {
+                // Local items were never uploaded (see saveStateToCloud), so
+                // there's nothing to delete there. For anything that was
+                // synced, delete it from the cloud too - otherwise the next
+                // fetchUserLibrary() pull would merge the old cloud row
+                // back in, resurrecting an item you just deleted.
+                deleteStateFromCloud(id);
             }
             appState.items = appState.items.filter(i => i.id !== id);
             appState.queue = appState.queue.filter(qid => qid !== id);
