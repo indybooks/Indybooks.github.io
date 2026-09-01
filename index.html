@@ -142,6 +142,7 @@
             <div class="flex gap-2">
                 <button onclick="openBulkEditModal()" class="px-3 py-1.5 bg-[#4173B0] text-white rounded-lg font-semibold shadow hover:bg-[#2B4C6D] cursor-pointer">Bulk Edit</button>
                 <button onclick="combineSelectedItems()" class="px-3 py-1.5 bg-[#EB8861] text-white rounded-lg font-semibold shadow hover:bg-[#d5734c] cursor-pointer">Combine into Volume</button>
+                <button onclick="bulkDeleteSelectedItems()" class="px-3 py-1.5 bg-red-500 text-white rounded-lg font-semibold shadow hover:bg-red-600 cursor-pointer">Delete</button>
                 <button onclick="clearSelection()" class="px-2 py-1.5 text-gray-500 hover:text-gray-700 cursor-pointer">Cancel</button>
             </div>
         </div>
@@ -1148,9 +1149,9 @@
 
             return `
                 <div class="p-3 flex items-center justify-between hover:bg-gray-50/80 transition ${isCurrent ? 'bg-[#C3D7EA]/20 border-l-4 border-[#4173B0]' : ''}">
-                    <div class="flex flex-col shrink-0 mr-1">
-                        <button onclick="moveItem('${item.id}', 'up', event)" ${isFirst ? 'disabled' : ''} class="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-[#4173B0] disabled:opacity-25 disabled:hover:text-gray-300 cursor-pointer disabled:cursor-default" title="Move up"><i class="fa-solid fa-chevron-up text-[9px]"></i></button>
-                        <button onclick="moveItem('${item.id}', 'down', event)" ${isLast ? 'disabled' : ''} class="w-5 h-5 flex items-center justify-center text-gray-300 hover:text-[#4173B0] disabled:opacity-25 disabled:hover:text-gray-300 cursor-pointer disabled:cursor-default" title="Move down"><i class="fa-solid fa-chevron-down text-[9px]"></i></button>
+                    <div class="flex flex-col shrink-0 mr-1 rounded-lg bg-[#4173B0]/10 overflow-hidden">
+                        <button onclick="moveItem('${item.id}', 'up', event)" ${isFirst ? 'disabled' : ''} class="w-6 h-5 flex items-center justify-center text-[#4173B0] hover:bg-[#4173B0]/25 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition" title="Move up"><i class="fa-solid fa-chevron-up text-[10px]"></i></button>
+                        <button onclick="moveItem('${item.id}', 'down', event)" ${isLast ? 'disabled' : ''} class="w-6 h-5 flex items-center justify-center text-[#4173B0] hover:bg-[#4173B0]/25 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition" title="Move down"><i class="fa-solid fa-chevron-down text-[10px]"></i></button>
                     </div>
                     <div class="flex items-center space-x-3 flex-1 min-w-0 cursor-pointer" onclick="playItem('${item.id}')">
                         <input type="checkbox" ${isChecked ? 'checked' : ''} onclick="toggleItemSelection('${item.id}', event)" class="w-4 h-4 accent-[#4173B0] rounded cursor-pointer shrink-0">
@@ -1248,8 +1249,11 @@
             }
         }
 
-        function deleteItem(id) {
-            if (!confirm('Are you sure you want to delete this audio item?')) return;
+        // Shared by deleteItem() and bulkDeleteSelectedItems(): removes an
+        // item's playback state, local-file storage, and queue references,
+        // but leaves confirmation/persistence/re-render to the caller so a
+        // bulk delete doesn't save/re-render once per item.
+        function deleteItemInternal(id) {
             const item = appState.items.find(i => i.id === id);
             if (appState.currentId === id) {
                 audioEl.pause();
@@ -1263,11 +1267,26 @@
                 deleteLocalAudio(id);
             }
             appState.items = appState.items.filter(i => i.id !== id);
+            appState.queue = appState.queue.filter(qid => qid !== id);
+        }
+
+        function deleteItem(id) {
+            if (!confirm('Are you sure you want to delete this audio item?')) return;
+            deleteItemInternal(id);
             appState.selectedItemIds = appState.selectedItemIds.filter(selId => selId !== id);
-            if (appState.queue.includes(id)) {
-                appState.queue = appState.queue.filter(qid => qid !== id);
-                updateQueueBadge();
-            }
+            updateQueueBadge();
+            updateBulkBar();
+            saveState();
+            renderLibrary();
+        }
+
+        function bulkDeleteSelectedItems() {
+            const count = appState.selectedItemIds.length;
+            if (count === 0) return;
+            if (!confirm(`Delete ${count} selected item${count > 1 ? 's' : ''}? This cannot be undone.`)) return;
+            appState.selectedItemIds.forEach(id => deleteItemInternal(id));
+            appState.selectedItemIds = [];
+            updateQueueBadge();
             updateBulkBar();
             saveState();
             renderLibrary();
@@ -1917,9 +1936,9 @@
                 if (!item) return '';
                 return `
                 <div class="py-2.5 flex items-center justify-between gap-2">
-                    <div class="flex flex-col shrink-0">
-                        <button onclick="moveQueueItem(${idx}, 'up')" ${idx === 0 ? 'disabled' : ''} class="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-[#4173B0] disabled:opacity-25 disabled:cursor-default cursor-pointer"><i class="fa-solid fa-chevron-up text-[9px]"></i></button>
-                        <button onclick="moveQueueItem(${idx}, 'down')" ${idx === appState.queue.length - 1 ? 'disabled' : ''} class="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-[#4173B0] disabled:opacity-25 disabled:cursor-default cursor-pointer"><i class="fa-solid fa-chevron-down text-[9px]"></i></button>
+                    <div class="flex flex-col shrink-0 rounded-lg bg-[#4173B0]/10 overflow-hidden">
+                        <button onclick="moveQueueItem(${idx}, 'up')" ${idx === 0 ? 'disabled' : ''} class="w-6 h-5 flex items-center justify-center text-[#4173B0] hover:bg-[#4173B0]/25 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"><i class="fa-solid fa-chevron-up text-[10px]"></i></button>
+                        <button onclick="moveQueueItem(${idx}, 'down')" ${idx === appState.queue.length - 1 ? 'disabled' : ''} class="w-6 h-5 flex items-center justify-center text-[#4173B0] hover:bg-[#4173B0]/25 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"><i class="fa-solid fa-chevron-down text-[10px]"></i></button>
                     </div>
                     <div class="min-w-0 flex-1 cursor-pointer" onclick="playQueueItemNow(${idx})">
                         <h5 class="text-xs font-bold text-[#2B4C6D] truncate">${item.title}</h5>
