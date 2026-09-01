@@ -607,6 +607,24 @@
         const audioEl = document.getElementById('main-audio-element');
         let audioCtx = null;
         let gainNode = null;
+        // Set once, here, before any track is ever loaded - NOT reactively
+        // inside setupAudioContext(). A MediaElementAudioSourceNode fed by a
+        // resource that was already fetched without CORS approval is spec'd
+        // to output permanent silence; crossOrigin only affects the *next*
+        // fetch, so setting it only when the user first requests a volume
+        // boost was routing whatever track was already mid-playback through
+        // Web Audio and muting it for good (no track loaded afterward could
+        // recover it either, since gainNode - once created - is used for
+        // every future volume change, including back down to 100%). Setting
+        // it here instead means every track, from the very first one, is
+        // always fetched under CORS approval, so connecting the graph later
+        // (still done lazily in setupAudioContext, to preserve background
+        // playback for the common unboosted case) is always safe. The
+        // tradeoff: a source whose server doesn't send CORS headers will now
+        // fail to load at all rather than merely being unboostable - a
+        // visible, per-track load error instead of a silent, session-wide,
+        // unrecoverable mute.
+        audioEl.crossOrigin = 'anonymous';
 
         // Initialize Supabase Client
         try {
@@ -941,16 +959,6 @@
         function setupAudioContext() {
             if (audioCtx) return;
             try {
-                // A MediaElementSourceNode fed by a cross-origin resource
-                // without CORS approval is spec'd to output silence, not an
-                // error. crossOrigin only takes effect on the *next* load, so
-                // this can't rescue whatever's already playing, but it means
-                // the track after this one has a real chance of being audible
-                // once boosted. Left unset by default (see call site) so
-                // plain unboosted playback isn't forced into CORS mode, which
-                // would fail outright on any server that doesn't send CORS
-                // headers - most podcast/audiobook CDNs included.
-                audioEl.crossOrigin = 'anonymous';
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
                 audioCtx = new AudioContext();
                 const source = audioCtx.createMediaElementSource(audioEl);
