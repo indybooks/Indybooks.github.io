@@ -628,7 +628,11 @@
             goodreadsUser: localStorage.getItem('indybooks_goodreads') || null,
             startTrim: parseInt(localStorage.getItem('indybooks_start_trim') || '0', 10),
             endTrim: parseInt(localStorage.getItem('indybooks_end_trim') || '0', 10),
-            currentId: null,
+            // Which item was playing used to be thrown away on every reload
+            // even though each item's own currentTime was saved correctly -
+            // so the app looked like it had forgotten the position, when
+            // really it had just forgotten *what* to apply it to.
+            currentId: localStorage.getItem('indybooks_current_id') || null,
             isPlaying: false,
             slothMode: false,
             sleepTimerTimeout: null
@@ -729,10 +733,20 @@
                 // otherwise the very device that uploaded the file would
                 // lose its own working playback URL on the next sync.
                 const localMatch = appState.items.find(i => i.id === cloudItem.id);
+                let result = cloudItem;
                 if (localMatch && freshLocalBlobIds.has(cloudItem.id)) {
-                    return { ...cloudItem, url: localMatch.url };
+                    result = { ...result, url: localMatch.url };
                 }
-                return cloudItem;
+                // Combined volumes aren't represented in the media_items
+                // schema at all (no subTracks column) - a cloud row for one
+                // is just an empty shell. Without this, every sync (e.g. on
+                // sign-in) would silently strip a volume's track list back
+                // out and reintroduce the broken single-track/zero-duration
+                // state this device already fixed.
+                if (localMatch && localMatch.subTracks) {
+                    result = { ...result, subTracks: localMatch.subTracks, currentSubTrackIndex: localMatch.currentSubTrackIndex };
+                }
+                return result;
             });
             appState.items = [...merged, ...localOnly];
             saveState();
@@ -903,6 +917,8 @@
             localStorage.setItem('indybooks_queue', JSON.stringify(appState.queue));
             localStorage.setItem('indybooks_start_trim', appState.startTrim);
             localStorage.setItem('indybooks_end_trim', appState.endTrim);
+            if (appState.currentId) localStorage.setItem('indybooks_current_id', appState.currentId);
+            else localStorage.removeItem('indybooks_current_id');
             if (appState.goodreadsUser) localStorage.setItem('indybooks_goodreads', appState.goodreadsUser);
             else localStorage.removeItem('indybooks_goodreads');
 
@@ -920,6 +936,19 @@
             document.getElementById('global-start-trim').value = appState.startTrim;
             document.getElementById('global-end-trim').value = appState.endTrim;
             registerServiceWorker();
+
+            // appState.currentId/currentTime survive a reload (they're read
+            // back from localStorage above), but the <audio> element itself
+            // starts empty - without this, the mini player shows the last
+            // session's track with nothing actually loaded, so pressing play
+            // silently does nothing until the item is re-tapped. A mobile OS
+            // reclaiming a backgrounded tab's memory triggers exactly this
+            // kind of reload, which is what made the saved position look
+            // lost even though it wasn't. autoplay:false re-primes the
+            // player at the saved position without starting sound on launch.
+            if (appState.currentId && appState.items.some(i => i.id === appState.currentId)) {
+                playItem(appState.currentId, { autoplay: false });
+            }
         };
 
         function registerServiceWorker() {
@@ -970,12 +999,24 @@
             if (document.visibilityState === 'visible' && audioCtx && audioCtx.state === 'suspended' && appState.isPlaying) {
                 audioCtx.resume();
             }
+            // Going hidden (switching apps, locking the screen, backgrounding
+            // the tab) is the last reliable moment to persist state before a
+            // mobile OS can freeze or kill the page outright - the next
+            // timeupdate this relied on before might never come.
+            if (document.visibilityState === 'hidden') {
+                flushPlaybackProgress();
+            }
         });
         window.addEventListener('pageshow', () => {
             if (audioCtx && audioCtx.state === 'suspended' && appState.isPlaying) {
                 audioCtx.resume();
             }
         });
+        // pagehide fires on backgrounding/navigation/close even in cases
+        // visibilitychange can miss (e.g. the page being evicted straight
+        // into bfcache) - a second, redundant flush costs nothing here since
+        // saveState()/syncPlaybackProgress() are idempotent.
+        window.addEventListener('pagehide', flushPlaybackProgress);
 
         // Routing the <audio> element through Web Audio (createMediaElementSource)
         // is a one-way trip: once connected, the element's sound only reaches
@@ -1082,7 +1123,7 @@
 
         function playWildcard() {
             if (appState.items.length === 0) return;
-            const playable = appState.items.filter(i => i.url);
+            const playable = appState.items.filter(i => i.url || (i.subTracks && i.subTracks.length > 0));
             if (playable.length === 0) {
                 alert('No playable items with direct audio URLs in your library.');
                 return;
@@ -1280,18 +1321,40 @@
             const volTitle = prompt('Enter a title for the combined Volume:', 'Combined Audiobook Volume');
             if (!volTitle) return;
 
-            const selectedItems = appState.items.filter(i => appState.selectedItemIds.includes(i.id));
+            // Preserve the order the user selected them in, not their order
+            // in the library, so playback advances the way they intended.
+            const selectedItems = appState.selectedItemIds
+                .map(id => appState.items.find(i => i.id === id))
+                .filter(Boolean);
+
+            // Each subtrack carries everything playItem() needs to resolve
+            // it on its own (id/local/storagePath for the local-file/cloud
+            // fallback, a cached duration) - a self-contained snapshot, not
+            // just a title/url pair nothing ever read.
+            const subTracks = selectedItems.map(i => ({
+                id: i.id,
+                title: i.title,
+                url: i.url || '',
+                local: !!i.local,
+                storagePath: i.storagePath || null,
+                duration: i.duration || 0,
+                currentTime: 0
+            }));
+
             const combinedItem = {
                 id: 'vol_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
                 title: volTitle,
                 author: selectedItems[0]?.author || 'Multiple Authors',
-                url: selectedItems[0]?.url || '',
                 folder: selectedItems[0]?.folder || 'Volumes',
                 cover: selectedItems[0]?.cover || '',
                 tags: ['volume', 'combined'],
-                subTracks: selectedItems.map(i => ({ title: i.title, url: i.url })),
+                subTracks,
+                currentSubTrackIndex: 0,
                 currentTime: 0,
-                duration: 0,
+                // Best-effort up front from whatever durations are already
+                // known (tracks played before); refined live as each
+                // subtrack actually loads, same as any other item's duration.
+                duration: subTracks.reduce((sum, s) => sum + (s.duration || 0), 0),
                 speed: 1.0,
                 bookmarks: []
             };
@@ -1400,7 +1463,12 @@
             `;
         }
 
-        async function playItem(id) {
+        // opts.autoplay defaults to true. Pass { autoplay: false } to load a
+        // saved position into the player (correct src/currentTime, correct
+        // UI) without starting sound - used to re-prime playback after a
+        // reload without surprising the user with audio on launch.
+        async function playItem(id, opts = {}) {
+            const autoplay = opts.autoplay !== false;
             if (audioCtx && audioCtx.state === 'suspended') {
                 audioCtx.resume();
             }
@@ -1409,49 +1477,29 @@
 
             appState.currentId = id;
 
-            if (item.local && !freshLocalBlobIds.has(id)) {
-                // item.url is a blob: URL restored from localStorage, which
-                // died the moment this page session started (see the
-                // "Local file storage" note above). Re-mint one from the
-                // actual bytes IndexedDB has on file for this item.
-                let blob = null;
-                try {
-                    blob = await loadLocalAudio(id);
-                } catch (e) {
-                    console.error('IndexedDB lookup failed for local file', id, e);
-                }
-                if (!blob && item.storagePath) {
-                    // Not cached on this device - e.g. it was uploaded from
-                    // a different one. Pull it from cloud storage and cache
-                    // it here so it plays offline afterward too, the same
-                    // as any other local file.
-                    try {
-                        blob = await downloadCloudAudio(item.storagePath);
-                        if (blob) await storeLocalAudio(id, blob);
-                    } catch (e) {
-                        console.error('Cloud audio download failed for', id, e);
-                    }
-                }
-                if (!blob) {
-                    const msg = item.storagePath
-                        ? "Couldn't download this file from the cloud. Check your connection and try again."
-                        : "This file's saved data is no longer available on this device (browser storage may have been cleared). Please re-upload it.";
-                    alert(msg);
-                    if (appState.currentId === id) appState.currentId = null;
-                    return;
-                }
-                if (item.url && item.url.startsWith('blob:')) URL.revokeObjectURL(item.url);
-                item.url = URL.createObjectURL(blob);
-                freshLocalBlobIds.add(id);
-            }
-
-            if (!item.url) {
-                alert('This item is a Goodreads log or missing a direct audio stream URL.');
+            if (item.subTracks && item.subTracks.length > 0) {
+                let idx = item.currentSubTrackIndex;
+                if (!(idx >= 0 && idx < item.subTracks.length)) idx = 0;
+                await playSubTrack(item, idx, { autoplay });
                 return;
             }
-            audioEl.src = item.url;
+
+            const resolved = await resolveLocalOrCloudUrl(item, id, freshLocalBlobIds);
+            if (resolved.error) {
+                alert(resolved.error);
+                if (appState.currentId === id) {
+                    appState.currentId = null;
+                    // currentId is now persisted (see appState init above) so
+                    // a permanently-unresolvable item doesn't get retried as
+                    // "the one to resume" on every future launch.
+                    saveState();
+                }
+                return;
+            }
+
+            audioEl.src = resolved.url;
             audioEl.playbackRate = appState.slothMode ? 0.5 : (item.speed || 1.0);
-            
+
             audioEl.onerror = () => {
                 alert('Playback error: Local browser codec support for .m4b / .mp4 files may vary or the URL is blocked.');
                 appState.isPlaying = false;
@@ -1461,13 +1509,67 @@
             audioEl.onloadedmetadata = () => {
                 item.duration = audioEl.duration;
                 audioEl.currentTime = Math.max(appState.startTrim, item.currentTime || appState.startTrim);
-                audioEl.play().catch(err => console.warn("Autoplay blocked:", err));
-                appState.isPlaying = true;
+                if (autoplay) {
+                    audioEl.play().catch(err => console.warn("Autoplay blocked:", err));
+                    appState.isPlaying = true;
+                } else {
+                    appState.isPlaying = false;
+                }
                 updatePlayerUI();
+                updatePlayerProgressUI();
                 renderLibrary();
                 setupMediaSession(item);
             };
             audioEl.load();
+        }
+
+        // Plays subtrack `idx` of a combined volume. Reuses the exact same
+        // local-file/cloud-fallback resolution as a normal item, keyed by
+        // the subtrack's own real id so its IndexedDB-cached bytes (stored
+        // under that id when it was an ordinary library item) are found.
+        async function playSubTrack(volumeItem, idx, opts = {}) {
+            const autoplay = opts.autoplay !== false;
+            const sub = volumeItem.subTracks[idx];
+            if (!sub) return;
+            volumeItem.currentSubTrackIndex = idx;
+
+            const resolved = await resolveLocalOrCloudUrl(sub, `${volumeItem.id}::${sub.id}`, freshSubTrackBlobIds);
+            if (resolved.error) {
+                alert(`Couldn't play "${sub.title}": ${resolved.error}`);
+                appState.isPlaying = false;
+                updatePlayerUI();
+                return;
+            }
+
+            audioEl.src = resolved.url;
+            audioEl.playbackRate = appState.slothMode ? 0.5 : (volumeItem.speed || 1.0);
+
+            audioEl.onerror = () => {
+                alert(`Playback error on "${sub.title}": Local browser codec support for .m4b / .mp4 files may vary or the URL is blocked.`);
+                appState.isPlaying = false;
+                updatePlayerUI();
+            };
+
+            audioEl.onloadedmetadata = () => {
+                sub.duration = audioEl.duration;
+                recomputeVolumeDuration(volumeItem);
+                audioEl.currentTime = Math.max(appState.startTrim, sub.currentTime || appState.startTrim);
+                if (autoplay) {
+                    audioEl.play().catch(err => console.warn("Autoplay blocked:", err));
+                    appState.isPlaying = true;
+                } else {
+                    appState.isPlaying = false;
+                }
+                updatePlayerUI();
+                updatePlayerProgressUI();
+                renderLibrary();
+                setupMediaSession(volumeItem);
+            };
+            audioEl.load();
+        }
+
+        function recomputeVolumeDuration(volumeItem) {
+            volumeItem.duration = volumeItem.subTracks.reduce((sum, s) => sum + (s.duration || 0), 0);
         }
 
         function setupMediaSession(item) {
@@ -1502,6 +1604,16 @@
                 freshLocalBlobIds.delete(id);
                 deleteLocalAudio(id);
                 if (item.storagePath) removeCloudAudio(item.storagePath);
+            }
+            if (item && item.subTracks) {
+                // These blob: URLs belong only to this volume's own cached
+                // copy (see resolveLocalOrCloudUrl) - the underlying library
+                // items they were snapshotted from, if still present, keep
+                // their own independent copy and are untouched here.
+                item.subTracks.forEach(sub => {
+                    if (sub.url && sub.url.startsWith('blob:')) URL.revokeObjectURL(sub.url);
+                    freshSubTrackBlobIds.delete(`${item.id}::${sub.id}`);
+                });
             }
             if (!item || !item.local || item.storagePath) {
                 // Skip only a local item that was never uploaded (no
@@ -1562,19 +1674,54 @@
             } else {
                 audioEl.pause();
                 appState.isPlaying = false;
+                // timeupdate won't fire again once paused, so without this
+                // the saved position can lag the real one by up to ~250ms -
+                // commit the exact position the instant playback stops.
+                flushPlaybackProgress();
             }
             updatePlayerUI();
         }
 
-        function onAudioTimeUpdate() {
-            if (!appState.currentId) return;
+        // Updates currentItem's currentTime/duration from the <audio>
+        // element's actual playback position. For a combined volume this
+        // means translating the current subtrack's position into elapsed
+        // time across the whole volume, not just copying audioEl.currentTime
+        // (which is only ever the position within whichever subtrack is
+        // currently loaded). Returns the current item, or null if nothing is
+        // playing, so callers can bail out the same way.
+        function syncCurrentPlaybackTime() {
+            if (!appState.currentId) return null;
             const currentItem = appState.items.find(i => i.id === appState.currentId);
+            if (!currentItem) return null;
+
+            if (currentItem.subTracks && currentItem.subTracks.length > 0) {
+                const idx = currentItem.currentSubTrackIndex || 0;
+                const sub = currentItem.subTracks[idx];
+                if (!sub) return currentItem;
+                sub.currentTime = audioEl.currentTime;
+                sub.duration = audioEl.duration || sub.duration;
+                recomputeVolumeDuration(currentItem);
+                const elapsedBefore = currentItem.subTracks.slice(0, idx).reduce((sum, s) => sum + (s.duration || 0), 0);
+                currentItem.currentTime = elapsedBefore + audioEl.currentTime;
+            } else {
+                currentItem.currentTime = audioEl.currentTime;
+                currentItem.duration = audioEl.duration || currentItem.duration;
+            }
+            return currentItem;
+        }
+
+        function onAudioTimeUpdate() {
+            const currentItem = syncCurrentPlaybackTime();
             if (!currentItem) return;
 
-            currentItem.currentTime = audioEl.currentTime;
-            currentItem.duration = audioEl.duration || currentItem.duration;
+            // endTrim trims each subtrack of a combined volume individually
+            // (e.g. skipping a per-chapter outro), so compare against the
+            // active subtrack's own duration, not the volume's total.
+            const activeDuration = (currentItem.subTracks && currentItem.subTracks.length > 0)
+                ? (currentItem.subTracks[currentItem.currentSubTrackIndex || 0]?.duration || 0)
+                : currentItem.duration;
 
-            if (appState.endTrim > 0 && currentItem.duration && audioEl.currentTime >= (currentItem.duration - appState.endTrim)) {
+            if (appState.endTrim > 0 && activeDuration && audioEl.currentTime >= (activeDuration - appState.endTrim)) {
                 audioEl.pause();
                 appState.isPlaying = false;
                 updatePlayerUI();
@@ -1582,11 +1729,30 @@
             }
 
             saveState();
-            syncPlaybackProgress(currentItem.id, audioEl.currentTime);
+            syncPlaybackProgress(currentItem.id, currentItem.currentTime);
             updatePlayerProgressUI();
         }
 
+        // Forces an immediate save of the exact current playback position,
+        // for moments timeupdate can't be relied on to have just fired: a
+        // manual pause, or the tab about to be hidden/torn down.
+        function flushPlaybackProgress() {
+            const currentItem = syncCurrentPlaybackTime();
+            if (!currentItem) return;
+            saveState();
+            syncPlaybackProgress(currentItem.id, currentItem.currentTime);
+        }
+
         function onAudioEnded() {
+            const currentItem = appState.items.find(i => i.id === appState.currentId);
+            if (currentItem && currentItem.subTracks && currentItem.subTracks.length > 0) {
+                const nextIdx = (currentItem.currentSubTrackIndex || 0) + 1;
+                if (nextIdx < currentItem.subTracks.length) {
+                    saveState();
+                    playSubTrack(currentItem, nextIdx);
+                    return;
+                }
+            }
             if (appState.queue.length > 0) {
                 const nextId = appState.queue.shift();
                 saveState();
@@ -1607,13 +1773,13 @@
             const currentItem = appState.items.find(i => i.id === appState.currentId);
             if (!currentItem || !currentItem.duration) return;
 
-            const pct = (audioEl.currentTime / currentItem.duration) * 100;
+            const pct = (currentItem.currentTime / currentItem.duration) * 100;
             document.getElementById('mini-progress').style.width = `${pct}%`;
-            document.getElementById('modal-seek-slider').value = audioEl.currentTime;
+            document.getElementById('modal-seek-slider').value = currentItem.currentTime;
             document.getElementById('modal-seek-slider').max = currentItem.duration;
-            document.getElementById('current-time-label').innerText = formatTime(audioEl.currentTime);
+            document.getElementById('current-time-label').innerText = formatTime(currentItem.currentTime);
             document.getElementById('total-time-label').innerText = formatTime(currentItem.duration);
-            document.getElementById('modal-time-remaining').innerText = `Time remaining: ${formatTime(currentItem.duration - audioEl.currentTime)}`;
+            document.getElementById('modal-time-remaining').innerText = `Time remaining: ${formatTime(currentItem.duration - currentItem.currentTime)}`;
             document.getElementById('modal-listened-pct').innerText = `${Math.round(pct)}% listened`;
         }
 
@@ -1703,6 +1869,57 @@
         // Ids whose blob: URL was minted in *this* page session, so playItem
         // knows item.url is trustworthy without a redundant IndexedDB round trip.
         const freshLocalBlobIds = new Set();
+        // Same idea, but for combined-volume subtracks (see combineSelectedItems).
+        // Keyed by "<volumeId>::<subtrackId>" rather than just the subtrack's
+        // real item id - a subtrack's id is copied from its original library
+        // item, and that original item tracks its own freshness independently
+        // in freshLocalBlobIds. Sharing one Set between them would let
+        // resolving the copy inside a volume wrongly mark the standalone
+        // item's (never-updated) url as fresh too, and vice versa.
+        const freshSubTrackBlobIds = new Set();
+
+        // Resolves a playable <audio> src for any {id, url, local, storagePath}
+        // source - a top-level library item, or a combined-volume subtrack.
+        // Shared so both go through the exact same local-file/cloud-fallback
+        // path instead of two copies that can drift.
+        async function resolveLocalOrCloudUrl(source, cacheKey, freshSet) {
+            if (source.local && !freshSet.has(cacheKey)) {
+                // source.url is a blob: URL restored from localStorage, which
+                // died the moment this page session started (see the
+                // "Local file storage" note below). Re-mint one from the
+                // actual bytes IndexedDB has on file for this item.
+                let blob = null;
+                try {
+                    blob = await loadLocalAudio(source.id);
+                } catch (e) {
+                    console.error('IndexedDB lookup failed for local file', source.id, e);
+                }
+                if (!blob && source.storagePath) {
+                    // Not cached on this device - e.g. it was uploaded from
+                    // a different one. Pull it from cloud storage and cache
+                    // it here so it plays offline afterward too, the same
+                    // as any other local file.
+                    try {
+                        blob = await downloadCloudAudio(source.storagePath);
+                        if (blob) await storeLocalAudio(source.id, blob);
+                    } catch (e) {
+                        console.error('Cloud audio download failed for', source.id, e);
+                    }
+                }
+                if (!blob) {
+                    return {
+                        error: source.storagePath
+                            ? "Couldn't download this file from the cloud. Check your connection and try again."
+                            : "This file's saved data is no longer available on this device (browser storage may have been cleared). Please re-upload it."
+                    };
+                }
+                if (source.url && source.url.startsWith('blob:')) URL.revokeObjectURL(source.url);
+                source.url = URL.createObjectURL(blob);
+                freshSet.add(cacheKey);
+            }
+            if (!source.url) return { error: 'This item is a Goodreads log or missing a direct audio stream URL.' };
+            return { url: source.url };
+        }
 
         function openLocalDb() {
             if (localDbPromise) return localDbPromise;
@@ -2271,11 +2488,44 @@
             if (!currentItem || !currentItem.duration) return;
             const rect = event.currentTarget.getBoundingClientRect();
             const pos = (event.clientX - rect.left) / rect.width;
-            audioEl.currentTime = pos * currentItem.duration;
+            seekTo(pos * currentItem.duration);
         }
 
         function onSeekInput(val) {}
-        function onSeekChange(val) { audioEl.currentTime = parseFloat(val); }
+        function onSeekChange(val) { seekTo(parseFloat(val)); }
+
+        // The seek slider's value/max are the combined item's elapsed
+        // time/total duration (see updatePlayerProgressUI), not the loaded
+        // subtrack's own - translate a target elapsed time into the right
+        // subtrack plus an offset within it, switching tracks if needed.
+        function seekTo(targetSeconds) {
+            const currentItem = appState.items.find(i => i.id === appState.currentId);
+            if (!currentItem) return;
+
+            if (currentItem.subTracks && currentItem.subTracks.length > 0) {
+                let elapsed = 0;
+                let targetIdx = currentItem.subTracks.length - 1;
+                let offset = 0;
+                for (let i = 0; i < currentItem.subTracks.length; i++) {
+                    const dur = currentItem.subTracks[i].duration || 0;
+                    if (targetSeconds < elapsed + dur || i === currentItem.subTracks.length - 1) {
+                        targetIdx = i;
+                        offset = Math.max(0, targetSeconds - elapsed);
+                        break;
+                    }
+                    elapsed += dur;
+                }
+                if (targetIdx === (currentItem.currentSubTrackIndex || 0)) {
+                    audioEl.currentTime = offset;
+                } else {
+                    currentItem.subTracks[targetIdx].currentTime = offset;
+                    playSubTrack(currentItem, targetIdx, { autoplay: appState.isPlaying });
+                }
+                return;
+            }
+
+            audioEl.currentTime = targetSeconds;
+        }
 
         function formatTime(secs) {
             if (isNaN(secs)) return "0:00";
