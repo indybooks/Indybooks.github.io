@@ -59,6 +59,36 @@
         .pb-safe {
             padding-bottom: env(safe-area-inset-bottom, 0px);
         }
+        /* All text ~15% larger. Overriding Tailwind's own theme variables
+           (rather than editing every text-* class site by hand) scales
+           every text-xs/sm/base/lg/xl/2xl/6xl use uniformly throughout the
+           app - including FontAwesome icons sized the same way, since an
+           icon glyph's rendered size is its font-size. Fixed-dimension
+           buttons (sized via w- and h- utilities, not text) are scaled individually at
+           their own class sites instead - overriding --spacing globally
+           would also inflate unrelated things sized off the same scale
+           (padding, gaps, cover art, modal widths), well beyond "buttons
+           and text". Deliberately NOT !important: Tailwind's theme
+           variables live in @layer theme, and this plain, unlayered :root
+           rule already outranks any layered one for normal-priority
+           declarations regardless of source order - that's what unlayered
+           styles are for. Adding !important here would do the opposite of
+           what it looks like: per the Cascade Layers spec, importance
+           reverses layer priority, so an !important on this unlayered rule
+           would actually lose to Tailwind's layered (but non-important)
+           one - confirmed by testing, since the override silently failed
+           to apply with !important present.
+           xs 12->13.8px, sm 14->16.1px, base 16->18.4px, lg 18->20.7px,
+           xl 20->23px, 2xl 24->27.6px, 6xl 60->69px. */
+        :root {
+            --text-xs: 0.8625rem;
+            --text-sm: 1.00625rem;
+            --text-base: 1.15rem;
+            --text-lg: 1.29375rem;
+            --text-xl: 1.4375rem;
+            --text-2xl: 1.725rem;
+            --text-6xl: 4.3125rem;
+        }
         ::-webkit-scrollbar {
             width: 4px;
             height: 4px;
@@ -86,23 +116,23 @@
             <div>
                 <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
                     IndyBooks
-                    <span id="sync-status-badge" class="text-[10px] bg-[#EB8861] text-white px-1.5 py-0.5 rounded-full font-medium">Local</span>
+                    <span id="sync-status-badge" class="text-[11.5px] bg-[#EB8861] text-white px-1.5 py-0.5 rounded-full font-medium">Local</span>
                 </h1>
                 <p id="user-status-subtitle" class="text-xs text-[#C3D7EA]">Podcast & Audiobook Hub</p>
             </div>
         </div>
         <div class="flex items-center space-x-2">
-            <button onclick="openQueueModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer relative" title="Play Queue">
+            <button onclick="openQueueModal()" class="w-[41px] h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer relative" title="Play Queue">
                 <i class="fa-solid fa-list-ol text-sm"></i>
-                <span id="queue-count-badge" class="hidden absolute -top-1 -right-1 bg-[#EB8861] text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center">0</span>
+                <span id="queue-count-badge" class="hidden absolute -top-1 -right-1 bg-[#EB8861] text-white text-[10.5px] w-4 h-4 rounded-full flex items-center justify-center">0</span>
             </button>
-            <button onclick="openSearchModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Search">
+            <button onclick="openSearchModal()" class="w-[41px] h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Search">
                 <i class="fa-solid fa-search text-sm"></i>
             </button>
-            <button onclick="openAuthModal()" id="auth-header-btn" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Supabase Cloud Account">
+            <button onclick="openAuthModal()" id="auth-header-btn" class="w-[41px] h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Supabase Cloud Account">
                 <i class="fa-solid fa-cloud text-sm"></i>
             </button>
-            <button onclick="openSettingsModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Settings">
+            <button onclick="openSettingsModal()" class="w-[41px] h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Settings">
                 <i class="fa-solid fa-gear text-sm"></i>
             </button>
         </div>
@@ -170,7 +200,7 @@
             </div>
 
             <div class="flex items-center space-x-3 ml-3">
-                <button id="sloth-mode-btn" onclick="toggleSlothMode()" title="Sloth Mode (0.5x Speed)" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/25 text-[#EB8861] flex items-center justify-center transition cursor-pointer">
+                <button id="sloth-mode-btn" onclick="toggleSlothMode()" title="Sloth Mode (0.5x Speed)" class="w-[41px] h-[41px] rounded-full bg-white/10 hover:bg-white/25 text-[#EB8861] flex items-center justify-center transition cursor-pointer">
                     <!-- Cropped to the branch+sloth's actual bounding box
                          (was "0 0 100 100", but the drawing only occupies
                          roughly y 21-65 of that, leaving it tiny and
@@ -182,13 +212,13 @@
                         <circle cx="54" cy="50" r="12" fill="currentColor"/>
                     </svg>
                 </button>
-                <button onclick="skipTime(-15)" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
+                <button onclick="skipTime(-15)" class="w-[41px] h-[41px] rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
                     <i class="fa-solid fa-rotate-left text-xs"></i>
                 </button>
-                <button id="mini-play-btn" onclick="togglePlayPause()" class="w-11 h-11 rounded-full bg-[#EDCE7A] text-[#2B4C6D] flex items-center justify-center shadow-lg hover:scale-105 transition cursor-pointer">
+                <button id="mini-play-btn" onclick="togglePlayPause()" class="w-[51px] h-[51px] rounded-full bg-[#EDCE7A] text-[#2B4C6D] flex items-center justify-center shadow-lg hover:scale-105 transition cursor-pointer">
                     <i class="fa-solid fa-play text-sm ml-0.5"></i>
                 </button>
-                <button onclick="skipTime(30)" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
+                <button onclick="skipTime(30)" class="w-[41px] h-[41px] rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
                     <i class="fa-solid fa-rotate-right text-xs"></i>
                 </button>
             </div>
@@ -201,16 +231,16 @@
     <!-- Full Player Modal -->
     <div id="player-modal" class="fixed inset-0 bg-[#2B4C6D] z-50 flex flex-col text-white transform translate-y-full transition-transform duration-300">
         <div class="px-4 py-4 flex items-center justify-between border-b border-white/10 pt-safe">
-            <button onclick="closePlayerModal()" class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white cursor-pointer">
+            <button onclick="closePlayerModal()" class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center text-white cursor-pointer">
                 <i class="fa-solid fa-chevron-down"></i>
             </button>
             <div class="text-center">
-                <span class="text-[10px] uppercase tracking-widest text-[#EDCE7A] font-bold">Now Playing</span>
+                <span class="text-[11.5px] uppercase tracking-widest text-[#EDCE7A] font-bold">Now Playing</span>
                 <h3 id="modal-org-title" class="text-xs text-[#C3D7EA] truncate max-w-[200px]">IndyBooks</h3>
             </div>
-            <button onclick="openBookmarksModal()" class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white relative cursor-pointer">
+            <button onclick="openBookmarksModal()" class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center text-white relative cursor-pointer">
                 <i class="fa-solid fa-bookmark"></i>
-                <span id="bookmark-count-badge" class="absolute -top-1 -right-1 bg-[#EB8861] text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center">0</span>
+                <span id="bookmark-count-badge" class="absolute -top-1 -right-1 bg-[#EB8861] text-white text-[10.5px] w-4 h-4 rounded-full flex items-center justify-center">0</span>
             </button>
         </div>
 
@@ -239,7 +269,7 @@
 
             <div class="flex items-center justify-center space-x-6 w-full max-w-md">
                 <button onclick="toggleSlothMode()" id="modal-sloth-btn" class="flex flex-col items-center text-xs text-[#C3D7EA] hover:text-white transition cursor-pointer">
-                    <div class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-[#EB8861] mb-1">
+                    <div class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center text-[#EB8861] mb-1">
                         <svg viewBox="0 0 100 100" class="w-5 h-5 stroke-current fill-none" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M5 25 L95 25" stroke="#854d0e" stroke-width="8"/>
                             <path d="M35 25 C35 35, 30 45, 40 55 C48 62, 60 62, 68 55 C75 45, 70 35, 70 25"/>
@@ -248,17 +278,17 @@
                     </div>
                     Sloth Mode
                 </button>
-                <button onclick="skipTime(-15)" class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer">
+                <button onclick="skipTime(-15)" class="w-[55px] h-[55px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer">
                     <i class="fa-solid fa-rotate-left"></i>
                 </button>
-                <button id="modal-play-btn" onclick="togglePlayPause()" class="w-16 h-16 rounded-full bg-[#EDCE7A] text-[#2B4C6D] flex items-center justify-center shadow-xl hover:scale-105 transition text-xl cursor-pointer">
+                <button id="modal-play-btn" onclick="togglePlayPause()" class="w-[74px] h-[74px] rounded-full bg-[#EDCE7A] text-[#2B4C6D] flex items-center justify-center shadow-xl hover:scale-105 transition text-xl cursor-pointer">
                     <i class="fa-solid fa-play ml-1"></i>
                 </button>
-                <button onclick="skipTime(30)" class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer">
+                <button onclick="skipTime(30)" class="w-[55px] h-[55px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer">
                     <i class="fa-solid fa-rotate-right"></i>
                 </button>
                 <button onclick="addBookmark()" class="flex flex-col items-center text-xs text-[#C3D7EA] hover:text-white transition cursor-pointer">
-                    <div class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-[#EDCE7A] mb-1">
+                    <div class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center text-[#EDCE7A] mb-1">
                         <i class="fa-solid fa-bookmark"></i>
                     </div>
                     Bookmark
@@ -269,9 +299,9 @@
             <div class="flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-md pt-2">
                 <div class="bg-white/10 rounded-xl px-4 py-2 flex items-center gap-3">
                     <span class="text-xs text-[#C3D7EA]">Speed:</span>
-                    <button onclick="adjustSpeed(-0.1)" class="w-7 h-7 rounded-lg bg-white/10 text-white font-bold hover:bg-white/20 cursor-pointer">-</button>
+                    <button onclick="adjustSpeed(-0.1)" class="w-8 h-8 rounded-lg bg-white/10 text-white font-bold hover:bg-white/20 cursor-pointer">-</button>
                     <span id="speed-label" class="text-sm font-bold text-[#EDCE7A] w-10 text-center">1.0x</span>
-                    <button onclick="adjustSpeed(0.1)" class="w-7 h-7 rounded-lg bg-white/10 text-white font-bold hover:bg-white/20 cursor-pointer">+</button>
+                    <button onclick="adjustSpeed(0.1)" class="w-8 h-8 rounded-lg bg-white/10 text-white font-bold hover:bg-white/20 cursor-pointer">+</button>
                 </div>
                 <div class="bg-white/10 rounded-xl px-4 py-2 flex items-center gap-2">
                     <i class="fa-solid fa-volume-low text-xs text-[#EDCE7A]"></i>
@@ -345,7 +375,7 @@
                 <div class="p-3 bg-green-50 text-green-800 rounded-xl text-xs flex items-center justify-between">
                     <div>
                         <p class="font-bold">Connected to Supabase</p>
-                        <p id="auth-user-email" class="text-[10px] text-green-700"></p>
+                        <p id="auth-user-email" class="text-[11.5px] text-green-700"></p>
                     </div>
                     <i class="fa-solid fa-cloud-arrow-up text-lg text-green-600"></i>
                 </div>
@@ -378,7 +408,7 @@
                 <div class="p-3 bg-[#C3D7EA]/30 text-[#2B4C6D] rounded-xl text-xs flex items-center justify-between">
                     <div>
                         <p class="font-bold">Goodreads Connected</p>
-                        <p id="goodreads-account-display" class="text-[10px] text-gray-600"></p>
+                        <p id="goodreads-account-display" class="text-[11.5px] text-gray-600"></p>
                     </div>
                     <i class="fa-solid fa-book-open text-lg text-[#4173B0]"></i>
                 </div>
@@ -766,13 +796,13 @@
                 loggedView.classList.remove('hidden');
                 document.getElementById('auth-user-email').innerText = currentUser.email;
                 badge.innerText = 'Synced';
-                badge.className = 'text-[10px] bg-green-600 text-white px-1.5 py-0.5 rounded-full font-medium';
+                badge.className = 'text-[11.5px] bg-green-600 text-white px-1.5 py-0.5 rounded-full font-medium';
                 sub.innerText = `Cloud Account: ${currentUser.email}`;
             } else {
                 unloggedView.classList.remove('hidden');
                 loggedView.classList.add('hidden');
                 badge.innerText = 'Local';
-                badge.className = 'text-[10px] bg-[#EB8861] text-white px-1.5 py-0.5 rounded-full font-medium';
+                badge.className = 'text-[11.5px] bg-[#EB8861] text-white px-1.5 py-0.5 rounded-full font-medium';
                 sub.innerText = 'Podcast & Audiobook Hub';
             }
         }
@@ -1086,23 +1116,95 @@
             return (item.folder && appState.folders.includes(item.folder)) ? item.folder : '';
         }
 
-        // Reorders within a folder (or within the ungrouped bucket) by
-        // swapping this item's position in appState.items with its nearest
-        // neighbor *in the same group* - items from other folders in between
-        // don't count, since renderLibrary() filters per group before display.
-        function moveItem(id, direction, event) {
-            if (event) event.stopPropagation();
-            const item = appState.items.find(i => i.id === id);
-            if (!item) return;
-            const group = libraryGroupOf(item);
-            const groupIndices = [];
-            appState.items.forEach((it, idx) => { if (libraryGroupOf(it) === group) groupIndices.push(idx); });
-            const posInGroup = groupIndices.indexOf(appState.items.indexOf(item));
-            const swapWith = direction === 'up' ? posInGroup - 1 : posInGroup + 1;
-            if (swapWith < 0 || swapWith >= groupIndices.length) return;
-            const a = groupIndices[posInGroup];
-            const b = groupIndices[swapWith];
-            [appState.items[a], appState.items[b]] = [appState.items[b], appState.items[a]];
+        // --- Drag-to-reorder ------------------------------------------------
+        // Replaces the old up/down arrow buttons. Uses Pointer Events (not
+        // native HTML5 drag-and-drop, which has no touch support at all) so
+        // this works the same on mouse and touch. A drag only starts from the
+        // handle, never the row itself, so it can't conflict with tapping a
+        // card to play it. Siblings are looked up via cardEl.parentElement,
+        // which is always the specific folder's own item-list container (or
+        // the ungrouped bucket's), so a drag can never cross into a different
+        // folder - reordering only, same scope as the arrows it replaces;
+        // moving an item to a different folder is still done via Edit.
+        let dragState = null;
+
+        function startItemDrag(id, event) {
+            if (event.button !== undefined && event.button !== 0) return;
+            event.preventDefault();
+            const handle = event.currentTarget;
+            const cardEl = handle.closest('[data-item-row]');
+            if (!cardEl) return;
+
+            dragState = {
+                id,
+                group: cardEl.dataset.groupKey,
+                cardEl,
+                container: cardEl.parentElement,
+                pointerId: event.pointerId,
+                startY: event.clientY,
+                moved: false,
+            };
+            handle.setPointerCapture(event.pointerId);
+            cardEl.style.position = 'relative';
+            cardEl.style.zIndex = '20';
+            cardEl.style.transition = 'none';
+            cardEl.classList.add('shadow-xl');
+
+            handle.addEventListener('pointermove', onItemDragMove);
+            handle.addEventListener('pointerup', onItemDragEnd);
+            handle.addEventListener('pointercancel', onItemDragEnd);
+        }
+
+        function onItemDragMove(event) {
+            if (!dragState) return;
+            const dy = event.clientY - dragState.startY;
+            if (Math.abs(dy) > 3) dragState.moved = true;
+            dragState.cardEl.style.transform = `translateY(${dy}px)`;
+        }
+
+        function onItemDragEnd(event) {
+            if (!dragState) return;
+            const { id, group, cardEl, container, moved } = dragState;
+            const handle = event.currentTarget;
+            handle.removeEventListener('pointermove', onItemDragMove);
+            handle.removeEventListener('pointerup', onItemDragEnd);
+            handle.removeEventListener('pointercancel', onItemDragEnd);
+            try { handle.releasePointerCapture(event.pointerId); } catch (e) {}
+
+            cardEl.style.transform = '';
+            cardEl.style.position = '';
+            cardEl.style.zIndex = '';
+            cardEl.style.transition = '';
+            cardEl.classList.remove('shadow-xl');
+            dragState = null;
+
+            if (!moved) return; // a tap on the handle, not a drag - no-op
+
+            // Drop target: whichever sibling (same folder/group) the pointer
+            // is currently over, above or below its midpoint. Landing outside
+            // every sibling (dragged past the folder's own list) cancels the
+            // reorder - the card above already snapped back to place.
+            const groupCards = [...container.querySelectorAll('[data-item-row]')]
+                .filter(el => el !== cardEl && el.dataset.groupKey === group);
+            const dropY = event.clientY;
+            let targetId = null, insertAfter = false;
+            for (const sib of groupCards) {
+                const rect = sib.getBoundingClientRect();
+                if (dropY >= rect.top && dropY <= rect.bottom) {
+                    targetId = sib.dataset.itemId;
+                    insertAfter = dropY > rect.top + rect.height / 2;
+                    break;
+                }
+            }
+            if (!targetId) return;
+
+            const draggedIdx = appState.items.findIndex(i => i.id === id);
+            if (draggedIdx === -1) return;
+            const [draggedItem] = appState.items.splice(draggedIdx, 1);
+            let targetIdx = appState.items.findIndex(i => i.id === targetId);
+            if (targetIdx === -1) { appState.items.splice(draggedIdx, 0, draggedItem); return; }
+            if (insertAfter) targetIdx += 1;
+            appState.items.splice(targetIdx, 0, draggedItem);
             saveState();
             renderLibrary();
         }
@@ -1235,7 +1337,7 @@
                             <i class="fa-solid ${isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'} text-xs text-gray-400"></i>
                             <i class="fa-solid fa-folder" style="color: ${folderColor}"></i>
                             <span>${folder}</span>
-                            <span class="text-xs text-gray-400 font-normal">(${folderItems.length})</span>
+                            <span class="text-xs text-gray-600 font-normal">(${folderItems.length})</span>
                         </div>
                         <div class="flex items-center space-x-2" onclick="event.stopPropagation()">
                             <input type="color" value="${folderColor}" onchange="updateFolderColor('${folder}', this.value)" class="w-5 h-5 rounded cursor-pointer border-none bg-transparent" title="Change Folder Color">
@@ -1245,7 +1347,7 @@
                         </div>
                     </div>
                     ${!isCollapsed ? `<div class="divide-y divide-gray-100">
-                        ${folderItems.length === 0 ? '<div class="p-3 text-xs text-gray-400 italic text-center">Folder is empty</div>' : folderItems.map((item, idx) => renderItemCard(item, idx === 0, idx === folderItems.length - 1)).join('')}
+                        ${folderItems.length === 0 ? '<div class="p-3 text-xs text-gray-400 italic text-center">Folder is empty</div>' : folderItems.map(item => renderItemCard(item)).join('')}
                     </div>` : ''}
                 `;
                 container.appendChild(folderEl);
@@ -1255,23 +1357,22 @@
             if (ungroupedItems.length > 0) {
                 const ungroupedEl = document.createElement('div');
                 ungroupedEl.className = 'bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-100';
-                ungroupedEl.innerHTML = ungroupedItems.map((item, idx) => renderItemCard(item, idx === 0, idx === ungroupedItems.length - 1)).join('');
+                ungroupedEl.innerHTML = ungroupedItems.map(item => renderItemCard(item)).join('');
                 container.appendChild(ungroupedEl);
             }
         }
 
-        function renderItemCard(item, isFirst, isLast) {
+        function renderItemCard(item) {
             const pct = item.duration ? Math.min(100, Math.round((item.currentTime / item.duration) * 100)) : 0;
             const timeRemaining = item.duration ? formatTime(item.duration - item.currentTime) : '--:--';
             const isCurrent = appState.currentId === item.id;
             const isChecked = appState.selectedItemIds.includes(item.id);
-            const tagsHtml = item.tags && item.tags.length > 0 ? item.tags.map(t => `<span class="text-[9px] bg-gray-100 text-[#4173B0] px-1.5 py-0.5 rounded-md font-medium">#${t.trim()}</span>`).join(' ') : '';
+            const tagsHtml = item.tags && item.tags.length > 0 ? item.tags.map(t => `<span class="text-[10.5px] bg-gray-100 text-[#4173B0] px-1.5 py-0.5 rounded-md font-medium">#${t.trim()}</span>`).join(' ') : '';
 
             return `
-                <div class="p-3 flex items-center justify-between hover:bg-gray-50/80 transition ${isCurrent ? 'bg-[#C3D7EA]/20 border-l-4 border-[#4173B0]' : ''}">
-                    <div class="flex flex-col shrink-0 mr-1 rounded-lg bg-[#4173B0]/10 overflow-hidden">
-                        <button onclick="moveItem('${item.id}', 'up', event)" ${isFirst ? 'disabled' : ''} class="w-6 h-5 flex items-center justify-center text-[#4173B0] hover:bg-[#4173B0]/25 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition" title="Move up"><i class="fa-solid fa-chevron-up text-[10px]"></i></button>
-                        <button onclick="moveItem('${item.id}', 'down', event)" ${isLast ? 'disabled' : ''} class="w-6 h-5 flex items-center justify-center text-[#4173B0] hover:bg-[#4173B0]/25 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition" title="Move down"><i class="fa-solid fa-chevron-down text-[10px]"></i></button>
+                <div class="p-3 flex items-center justify-between hover:bg-gray-50/80 transition ${isCurrent ? 'bg-[#C3D7EA]/20 border-l-4 border-[#4173B0]' : ''}" data-item-row data-item-id="${item.id}" data-group-key="${libraryGroupOf(item)}">
+                    <div class="drag-handle shrink-0 mr-4 w-8 h-10 flex items-center justify-center text-gray-400 hover:text-[#4173B0] active:text-[#4173B0] cursor-grab active:cursor-grabbing touch-none select-none" title="Drag to reorder" onpointerdown="startItemDrag('${item.id}', event)">
+                        <i class="fa-solid fa-grip-vertical text-sm"></i>
                     </div>
                     <div class="flex items-center space-x-3 flex-1 min-w-0 cursor-pointer" onclick="playItem('${item.id}')">
                         <input type="checkbox" ${isChecked ? 'checked' : ''} onclick="toggleItemSelection('${item.id}', event)" class="w-4 h-4 accent-[#4173B0] rounded cursor-pointer shrink-0">
@@ -1280,20 +1381,20 @@
                         </div>
                         <div class="min-w-0 flex-1">
                             <h4 class="text-xs font-bold text-[#2B4C6D] truncate">${item.title}</h4>
-                            <p class="text-[11px] text-gray-600 truncate">${item.author || 'Unknown Author'}</p>
+                            <p class="text-[12.5px] text-gray-600 truncate">${item.author || 'Unknown Author'}</p>
                             <div class="flex items-center space-x-2 mt-1">
                                 <div class="flex-1 bg-gray-200 h-1.5 rounded-full overflow-hidden max-w-[120px]">
                                     <div class="bg-[#4173B0] h-full" style="width: ${pct}%"></div>
                                 </div>
-                                <span class="text-[10px] text-gray-500">${pct}% • ${timeRemaining}</span>
+                                <span class="text-[11.5px] text-gray-500">${pct}% • ${timeRemaining}</span>
                             </div>
                             ${tagsHtml ? `<div class="flex flex-wrap gap-1 mt-1.5">${tagsHtml}</div>` : ''}
                         </div>
                     </div>
                     <div class="flex items-center space-x-1 ml-2">
-                        <button onclick="addToQueue('${item.id}', event)" class="w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Add to Queue"><i class="fa-solid fa-list-ol text-xs"></i></button>
-                        <button onclick="openEditModal('${item.id}')" class="w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Edit"><i class="fa-solid fa-ellipsis-vertical text-xs"></i></button>
-                        <button onclick="deleteItem('${item.id}')" class="w-8 h-8 rounded-full hover:bg-red-50 flex items-center justify-center text-red-500 cursor-pointer" title="Delete"><i class="fa-solid fa-trash text-xs"></i></button>
+                        <button onclick="addToQueue('${item.id}', event)" class="w-[37px] h-[37px] rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Add to Queue"><i class="fa-solid fa-list-ol text-xs"></i></button>
+                        <button onclick="openEditModal('${item.id}')" class="w-[37px] h-[37px] rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Edit"><i class="fa-solid fa-ellipsis-vertical text-xs"></i></button>
+                        <button onclick="deleteItem('${item.id}')" class="w-[37px] h-[37px] rounded-full hover:bg-red-50 flex items-center justify-center text-red-500 cursor-pointer" title="Delete"><i class="fa-solid fa-trash text-xs"></i></button>
                     </div>
                 </div>
             `;
@@ -2006,7 +2107,7 @@
                 <div class="py-2.5 flex items-center justify-between">
                     <div>
                         <h5 class="text-xs font-bold text-[#2B4C6D]">${b.title}</h5>
-                        <span class="text-[10px] text-gray-400">${formatTime(b.time)}</span>
+                        <span class="text-[11.5px] text-gray-400">${formatTime(b.time)}</span>
                     </div>
                     <button onclick="audioEl.currentTime = ${b.time}; closeModals();" class="px-3 py-1 bg-[#4173B0] text-white text-xs rounded-lg cursor-pointer">Jump</button>
                 </div>
@@ -2086,14 +2187,14 @@
                 return `
                 <div class="py-2.5 flex items-center justify-between gap-2">
                     <div class="flex flex-col shrink-0 rounded-lg bg-[#4173B0]/10 overflow-hidden">
-                        <button onclick="moveQueueItem(${idx}, 'up')" ${idx === 0 ? 'disabled' : ''} class="w-6 h-5 flex items-center justify-center text-[#4173B0] hover:bg-[#4173B0]/25 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"><i class="fa-solid fa-chevron-up text-[10px]"></i></button>
-                        <button onclick="moveQueueItem(${idx}, 'down')" ${idx === appState.queue.length - 1 ? 'disabled' : ''} class="w-6 h-5 flex items-center justify-center text-[#4173B0] hover:bg-[#4173B0]/25 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"><i class="fa-solid fa-chevron-down text-[10px]"></i></button>
+                        <button onclick="moveQueueItem(${idx}, 'up')" ${idx === 0 ? 'disabled' : ''} class="w-[28px] h-[23px] flex items-center justify-center text-[#4173B0] hover:bg-[#4173B0]/25 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"><i class="fa-solid fa-chevron-up text-[11.5px]"></i></button>
+                        <button onclick="moveQueueItem(${idx}, 'down')" ${idx === appState.queue.length - 1 ? 'disabled' : ''} class="w-[28px] h-[23px] flex items-center justify-center text-[#4173B0] hover:bg-[#4173B0]/25 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"><i class="fa-solid fa-chevron-down text-[11.5px]"></i></button>
                     </div>
                     <div class="min-w-0 flex-1 cursor-pointer" onclick="playQueueItemNow(${idx})">
                         <h5 class="text-xs font-bold text-[#2B4C6D] truncate">${item.title}</h5>
-                        <span class="text-[10px] text-gray-400 truncate">${item.author || 'Unknown Author'}</span>
+                        <span class="text-[11.5px] text-gray-400 truncate">${item.author || 'Unknown Author'}</span>
                     </div>
-                    <button onclick="removeFromQueue(${idx})" class="w-7 h-7 rounded-full hover:bg-red-50 flex items-center justify-center text-red-500 cursor-pointer shrink-0" title="Remove from queue"><i class="fa-solid fa-xmark text-xs"></i></button>
+                    <button onclick="removeFromQueue(${idx})" class="w-8 h-8 rounded-full hover:bg-red-50 flex items-center justify-center text-red-500 cursor-pointer shrink-0" title="Remove from queue"><i class="fa-solid fa-xmark text-xs"></i></button>
                 </div>
             `;
             }).join('');
@@ -2131,12 +2232,12 @@
                 if (i.tags) i.tags.forEach(t => allTags.add(t));
             });
             if (allTags.size === 0) {
-                cloud.innerHTML = '<span class="text-[10px] text-gray-400 italic">No tags created yet. Add tags in Edit Details.</span>';
+                cloud.innerHTML = '<span class="text-[11.5px] text-gray-400 italic">No tags created yet. Add tags in Edit Details.</span>';
                 return;
             }
             let html = '';
             allTags.forEach(tag => {
-                html += `<button onclick="filterByTag('${tag}')" class="text-[10px] bg-[#C3D7EA]/40 text-[#2B4C6D] px-2 py-1 rounded-lg font-semibold hover:bg-[#C3D7EA] cursor-pointer">#${tag}</button>`;
+                html += `<button onclick="filterByTag('${tag}')" class="text-[11.5px] bg-[#C3D7EA]/40 text-[#2B4C6D] px-2 py-1 rounded-lg font-semibold hover:bg-[#C3D7EA] cursor-pointer">#${tag}</button>`;
             });
             cloud.innerHTML = html;
         }
@@ -2160,7 +2261,7 @@
             results.innerHTML = matches.length === 0 ? '<div class="text-xs text-gray-400 text-center py-4">No results found</div>' : matches.map(m => `
                 <div class="p-2 hover:bg-gray-50 rounded-xl cursor-pointer flex items-center justify-between" onclick="playItem('${m.id}'); closeModals();">
                     <span class="text-xs font-semibold text-[#2B4C6D] truncate">${m.title}</span>
-                    <span class="text-[10px] text-gray-400">${m.folder || 'Ungrouped'}</span>
+                    <span class="text-[11.5px] text-gray-400">${m.folder || 'Ungrouped'}</span>
                 </div>
             `).join('');
         }
