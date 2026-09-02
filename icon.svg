@@ -1,7 +1,7 @@
 <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs><clipPath id="indy-clip"><circle cx="50" cy="50" r="50"/></clipPath></defs>
   <g clip-path="url(#indy-clip)">
-    <circle cx="50" cy="50" r="50" fill="#C3D7EA"/>
+    <circle cx="50" cy="50" r="50" fill="#FFDDA6"/>
     <ellipse cx="72.0" cy="53.0" rx="6.2" ry="21.0" fill="#C89A70" transform="rotate(-6 72.0 53.0)"/>
     <ellipse cx="77.5" cy="56.5" rx="6.8" ry="23.5" fill="#DCAF88" transform="rotate(-10 77.5 56.5)"/>
     <ellipse cx="82.5" cy="53.0" rx="4.2" ry="17.0" fill="#DCAF88" transform="rotate(-13 82.5 53.0)"/>
