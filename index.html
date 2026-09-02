@@ -1958,7 +1958,17 @@
             const files = event.target.files;
             if (!files || files.length === 0) return;
 
-            Array.from(files).forEach(file => {
+            // A multi-file picker hands files back in whatever order the OS
+            // reports them - not guaranteed alphabetical, and even when it
+            // is, plain string order puts "Chapter 10" before "Chapter 2".
+            // Sort by filename with numeric-aware comparison so a batch of
+            // numbered chapters/tracks lands in the library in the order a
+            // person would actually read them.
+            const sortedFiles = Array.from(files).sort((a, b) =>
+                a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+            );
+
+            sortedFiles.forEach(file => {
                 const mime = file.type || inferAudioMimeType(file.name);
                 const source = (mime && mime !== file.type) ? new Blob([file], { type: mime }) : file;
                 const url = URL.createObjectURL(source);
