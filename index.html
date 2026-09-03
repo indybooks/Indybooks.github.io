@@ -651,6 +651,13 @@
             sleepTimerEndsAt: null
         };
 
+        // Tracks the item count as of the last write saveState() actually
+        // made (in memory, not re-read from localStorage on every call -
+        // this runs on every timeupdate tick, ~4x/second during playback).
+        // See saveState() below: any call that would drop below this
+        // without explicitly saying so is refused rather than persisted.
+        let lastPersistedItemCount = appState.items.length;
+
         const audioEl = document.getElementById('main-audio-element');
         let audioCtx = null;
         let gainNode = null;
@@ -945,7 +952,36 @@
             if (error) console.warn('Cloud audio removal failed for', path, error.message);
         }
 
-        function saveState() {
+        // Every write to appState.items funnels through here, so this is the
+        // one place that can catch a wipe regardless of which caller causes
+        // it - not just the cloud-sync path fetchUserLibrary() already
+        // guards. Deleting is the only legitimate way the library should
+        // ever get smaller; every other caller (edits, uploads, reorders,
+        // sync) should only ever hold steady or grow. Pass
+        // { allowShrink: true } from a caller that just intentionally
+        // removed items - anything else with fewer items than last
+        // persisted is refused rather than saved, so a bug can't silently
+        // overwrite the one copy of the library with a smaller one.
+        function saveState(opts = {}) {
+            const allowShrink = !!opts.allowShrink;
+
+            if (!allowShrink && appState.items.length < lastPersistedItemCount) {
+                console.error(
+                    `saveState() blocked a write that would have silently dropped the library from ${lastPersistedItemCount} to ${appState.items.length} item(s). ` +
+                    `If this reduction is actually intentional, the caller needs to pass saveState({ allowShrink: true }). This save was skipped - nothing was lost.`
+                );
+                console.trace('saveState() call site for the blocked write');
+                try {
+                    const log = JSON.parse(localStorage.getItem('indybooks_blocked_shrink_log') || '[]');
+                    log.push({ at: new Date().toISOString(), from: lastPersistedItemCount, to: appState.items.length, stack: new Error().stack });
+                    localStorage.setItem('indybooks_blocked_shrink_log', JSON.stringify(log.slice(-10)));
+                } catch (e) {
+                    // Diagnostics are best-effort only - never let a logging
+                    // failure be the reason the actual guard above didn't run.
+                }
+                return false;
+            }
+
             localStorage.setItem('indybooks_items', JSON.stringify(appState.items));
             localStorage.setItem('indybooks_folders', JSON.stringify(appState.folders));
             localStorage.setItem('indybooks_folder_colors', JSON.stringify(appState.folderColors));
@@ -957,6 +993,8 @@
             else localStorage.removeItem('indybooks_current_id');
             if (appState.goodreadsUser) localStorage.setItem('indybooks_goodreads', appState.goodreadsUser);
             else localStorage.removeItem('indybooks_goodreads');
+
+            lastPersistedItemCount = appState.items.length;
 
             if (appState.currentId) {
                 const cur = appState.items.find(i => i.id === appState.currentId);
@@ -984,6 +1022,8 @@
                     console.warn('Could not write recovery snapshot:', e);
                 }
             }
+
+            return true;
         }
 
         // Runs once at launch. If the library is empty but a non-empty
@@ -1852,7 +1892,7 @@
             appState.selectedItemIds = appState.selectedItemIds.filter(selId => selId !== id);
             updateQueueBadge();
             updateBulkBar();
-            saveState();
+            saveState({ allowShrink: true });
             renderLibrary();
         }
 
@@ -1864,7 +1904,7 @@
             appState.selectedItemIds = [];
             updateQueueBadge();
             updateBulkBar();
-            saveState();
+            saveState({ allowShrink: true });
             renderLibrary();
         }
 
@@ -1903,7 +1943,11 @@
             delete appState.folderColors[folderName];
             updateQueueBadge();
             updateBulkBar();
-            saveState();
+            // Only the deleteContents branch above actually removes items;
+            // the else branch just clears their folder field, so this is
+            // never really a shrink in that case - allowShrink:true is safe
+            // either way since it only relaxes the check, never forces it.
+            saveState({ allowShrink: true });
             renderLibrary();
             updateFolderDropdowns();
         }
