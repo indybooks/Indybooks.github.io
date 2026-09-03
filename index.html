@@ -575,6 +575,14 @@
                 <span class="text-xs text-gray-600 font-medium">Export / Backup Library Data</span>
                 <button onclick="exportLibrary()" class="px-4 py-2 bg-gray-100 text-[#1B3F57] hover:bg-gray-200 rounded-xl text-xs font-semibold cursor-pointer">Export JSON</button>
             </div>
+            <div class="pt-2 border-t border-gray-100 flex justify-between items-center">
+                <span class="text-xs text-gray-600 font-medium">Restore From Backup File</span>
+                <label class="px-4 py-2 bg-gray-100 text-[#1B3F57] hover:bg-gray-200 rounded-xl text-xs font-semibold cursor-pointer">
+                    Import JSON
+                    <input type="file" id="restore-backup-file" accept="application/json,.json" class="hidden" onchange="importLibraryBackup(event)">
+                </label>
+            </div>
+            <div id="backup-recovery-note" class="hidden pt-2 border-t border-gray-100 text-xs bg-[#FFDDA6]/40 text-[#1B3F57] rounded-xl p-3"></div>
             <div class="flex justify-end pt-2">
                 <button onclick="saveAppSettings()" class="px-5 py-2 text-xs font-semibold bg-[#3F8CB8] text-white rounded-xl shadow hover:bg-[#1B3F57] cursor-pointer">Save Settings</button>
             </div>
@@ -669,6 +677,14 @@
 
         async function fetchUserLibrary(userId) {
             if (!supabaseClient || !userId) return;
+            // Snapshot before the network round-trip, not after: computing
+            // localOnly/merged from a *live* read of appState.items (taken
+            // only once the request resolves) meant any other write that
+            // landed while this was in flight - another sync, a delete, a
+            // second overlapping call - was invisibly folded into what this
+            // function treats as "local" state. Deciding what's local up
+            // front closes that window entirely.
+            const localSnapshot = appState.items;
             const { data, error } = await supabaseClient
                 .from('media_items')
                 .select('*, bookmarks(*)')
@@ -712,14 +728,14 @@
             // the automatic check on every page load. Keep local items the
             // cloud doesn't know about instead of discarding them.
             const cloudIds = new Set(cloudItems.map(i => i.id));
-            const localOnly = appState.items.filter(i => !cloudIds.has(i.id));
+            const localOnly = localSnapshot.filter(i => !cloudIds.has(i.id));
             const merged = cloudItems.map(cloudItem => {
                 // A cloud row's url is intentionally blank for storage-backed
                 // items (see saveStateToCloud). If this device already
                 // minted a live blob: URL for it this session, keep that -
                 // otherwise the very device that uploaded the file would
                 // lose its own working playback URL on the next sync.
-                const localMatch = appState.items.find(i => i.id === cloudItem.id);
+                const localMatch = localSnapshot.find(i => i.id === cloudItem.id);
                 let result = cloudItem;
                 if (localMatch && freshLocalBlobIds.has(cloudItem.id)) {
                     result = { ...result, url: localMatch.url };
@@ -735,7 +751,22 @@
                 }
                 return result;
             });
-            appState.items = [...merged, ...localOnly];
+            const nextItems = [...merged, ...localOnly];
+
+            // Belt-and-suspenders: this merge is built to never lose an item
+            // that was in localSnapshot, but if some future change to the
+            // logic above ever broke that guarantee, applying the result
+            // anyway would silently wipe the library on every sync from then
+            // on. Refuse instead - keep showing what's already on screen and
+            // surface it loudly rather than deleting anything.
+            if (nextItems.length < localSnapshot.length) {
+                console.error(
+                    `fetchUserLibrary refused to apply a shrinking sync (${localSnapshot.length} -> ${nextItems.length} items) - this should be impossible and is a bug. Local library left untouched.`
+                );
+                return;
+            }
+
+            appState.items = nextItems;
             saveState();
             renderLibrary();
         }
@@ -913,6 +944,57 @@
                 const cur = appState.items.find(i => i.id === appState.currentId);
                 if (cur) saveStateToCloud(cur);
             }
+
+            // A rolling last-known-good snapshot, kept separately from the
+            // live indybooks_items key. Deliberately only ever overwritten
+            // when the library is non-empty, so a bug (anywhere - a bad
+            // merge, a bad import, a future regression) that empties
+            // appState.items can never also erase the one copy that could
+            // recover from it. This is a same-device safety net, not a
+            // substitute for the exportable JSON backup - it can't survive
+            // the browser's own site data being cleared, only a bug.
+            if (appState.items.length > 0) {
+                try {
+                    localStorage.setItem('indybooks_last_good_snapshot', JSON.stringify({
+                        items: appState.items,
+                        folders: appState.folders,
+                        folderColors: appState.folderColors,
+                        savedAt: Date.now(),
+                    }));
+                } catch (e) {
+                    // Quota errors etc. shouldn't block the primary save above.
+                    console.warn('Could not write recovery snapshot:', e);
+                }
+            }
+        }
+
+        // Runs once at launch. If the library is empty but a non-empty
+        // snapshot exists, something emptied indybooks_items since that
+        // snapshot was taken - offer to recover it rather than the user
+        // discovering an empty library with no way back.
+        function checkForLibraryWipe() {
+            if (appState.items.length > 0) return;
+            let snapshot;
+            try {
+                snapshot = JSON.parse(localStorage.getItem('indybooks_last_good_snapshot') || 'null');
+            } catch (e) {
+                return;
+            }
+            if (!snapshot || !Array.isArray(snapshot.items) || snapshot.items.length === 0) return;
+
+            const when = snapshot.savedAt ? new Date(snapshot.savedAt).toLocaleString() : 'a previous session';
+            const restore = confirm(
+                `Your library appears empty, but a local backup from ${when} has ${snapshot.items.length} item(s). Restore it now?`
+            );
+            if (!restore) return;
+
+            appState.items = snapshot.items;
+            if (Array.isArray(snapshot.folders)) appState.folders = snapshot.folders;
+            if (snapshot.folderColors) appState.folderColors = snapshot.folderColors;
+            saveState();
+            appState.items.forEach(item => saveStateToCloud(item));
+            renderLibrary();
+            updateFolderDropdowns();
         }
 
         window.onload = function() {
@@ -936,6 +1018,14 @@
             if (appState.currentId && appState.items.some(i => i.id === appState.currentId)) {
                 playItem(appState.currentId, { autoplay: false });
             }
+
+            // Delayed so a signed-in device's automatic cloud fetch
+            // (checkSupabaseSession -> fetchUserLibrary, kicked off earlier
+            // during script init) has a real chance to finish and populate
+            // appState.items first - otherwise a legitimately syncing device
+            // would get an unnecessary "restore from backup?" prompt in the
+            // couple hundred ms before its own data arrives.
+            setTimeout(checkForLibraryWipe, 2000);
         };
 
         function registerServiceWorker() {
@@ -1023,6 +1113,20 @@
                 gainNode = audioCtx.createGain();
                 source.connect(gainNode);
                 gainNode.connect(audioCtx.destination);
+                // A freshly created AudioContext is very often born
+                // 'suspended' - browsers don't universally treat a slider's
+                // oninput the same as a trusted .play() call for autoplay-
+                // gesture purposes. Without resuming here, the graph is
+                // wired up correctly but produces no sound at all, and
+                // because gainNode now exists permanently, every future
+                // volume change (up OR down) keeps routing through this
+                // same suspended context - silent until the page reloads.
+                // This runs synchronously inside the user gesture that
+                // triggered the volume change, so resume() is allowed to
+                // actually take effect here.
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume().catch(e => console.warn('AudioContext resume failed:', e));
+                }
             } catch (e) {
                 console.warn('Web Audio API volume node not supported:', e);
             }
@@ -1032,6 +1136,16 @@
             const v = parseFloat(val);
             if (!gainNode && v > 1.0) setupAudioContext();
             if (gainNode) {
+                // Belt-and-suspenders alongside the resume() in
+                // setupAudioContext(): if the context gets suspended again
+                // later for any other reason (e.g. backgrounding), the next
+                // volume change - in either direction, since gainNode never
+                // goes back to null once created - is a real user gesture
+                // and a reliable place to bring it back before it looks
+                // like the volume control itself has stopped working.
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume().catch(e => console.warn('AudioContext resume failed:', e));
+                }
                 gainNode.gain.value = v;
             } else {
                 audioEl.volume = Math.min(1.0, v);
@@ -2429,14 +2543,131 @@
             closeModals();
         }
 
-        function exportLibrary() {
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appState));
-            const downloadAnchor = document.createElement('a');
-            downloadAnchor.setAttribute("href", dataStr);
-            downloadAnchor.setAttribute("download", "indybooks_backup.json");
-            document.body.appendChild(downloadAnchor);
-            downloadAnchor.click();
-            downloadAnchor.remove();
+        const BACKUP_FORMAT_VERSION = 1;
+
+        function buildBackupPayload() {
+            return {
+                backupFormat: 'indybooks-library-backup',
+                version: BACKUP_FORMAT_VERSION,
+                exportedAt: new Date().toISOString(),
+                items: appState.items,
+                folders: appState.folders,
+                folderColors: appState.folderColors,
+            };
+        }
+
+        async function exportLibrary() {
+            let blob;
+            try {
+                blob = new Blob([JSON.stringify(buildBackupPayload(), null, 2)], { type: 'application/json' });
+            } catch (e) {
+                // Only realistic cause is a non-serializable value having
+                // snuck into appState.items (e.g. via a bug elsewhere) -
+                // fail loud rather than silently producing an empty/broken
+                // file, which is what made this button look "non-functional".
+                console.error('Could not build backup file:', e);
+                alert('Could not build the backup file: ' + e.message);
+                return;
+            }
+
+            const filename = `indybooks_backup_${new Date().toISOString().slice(0, 10)}.json`;
+
+            // A plain <a download> click on a data: URI is unreliable in a
+            // standalone/home-screen PWA - iOS Safari in particular has no
+            // browser chrome to hand the download to, so the click can just
+            // silently do nothing (exactly "non-functional"). The Web Share
+            // API opens the native Save/AirDrop/Mail sheet instead, which
+            // does work from a standalone PWA - try it first where a real
+            // file share is supported, and only fall back to the anchor
+            // download (now Blob-URL based, not a data: URI) when it isn't.
+            const file = new File([blob], filename, { type: 'application/json' });
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                try {
+                    await navigator.share({ files: [file], title: 'IndyBooks Library Backup' });
+                    return;
+                } catch (e) {
+                    if (e && e.name === 'AbortError') return; // user cancelled the share sheet
+                    console.warn('Web Share failed, falling back to direct download:', e);
+                }
+            }
+
+            try {
+                const url = URL.createObjectURL(blob);
+                const downloadAnchor = document.createElement('a');
+                downloadAnchor.href = url;
+                downloadAnchor.download = filename;
+                document.body.appendChild(downloadAnchor);
+                downloadAnchor.click();
+                downloadAnchor.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            } catch (e) {
+                console.error('Backup download failed:', e);
+                alert("Couldn't start the download: " + e.message);
+            }
+        }
+
+        // Restoring is deliberately additive-only: it adds any backed-up
+        // item/folder this device doesn't currently have, and never deletes
+        // or overwrites what's already here. That makes it safe to use
+        // as recovery from a wipe (nothing further to lose) without also
+        // being a footgun that could clobber newer data with a stale backup.
+        function importLibraryBackup(event) {
+            const file = event.target.files && event.target.files[0];
+            event.target.value = ''; // allow re-selecting the same file later
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onerror = () => alert("Couldn't read that file.");
+            reader.onload = () => {
+                let payload;
+                try {
+                    payload = JSON.parse(reader.result);
+                } catch (e) {
+                    alert('That file is not valid JSON.');
+                    return;
+                }
+                // Accept both the new dedicated backup shape and a raw
+                // appState dump (what the old, broken export button used to
+                // produce, back when it worked in a browser that supported
+                // data: URI downloads) so an existing backup file still restores.
+                const items = Array.isArray(payload.items) ? payload.items : null;
+                if (!items) {
+                    alert('That file doesn\'t look like an IndyBooks backup (no items array found).');
+                    return;
+                }
+
+                const existingIds = new Set(appState.items.map(i => i.id));
+                const newItems = items.filter(i => i && i.id && !existingIds.has(i.id));
+                const newFolders = Array.isArray(payload.folders) ? payload.folders.filter(f => !appState.folders.includes(f)) : [];
+
+                if (newItems.length === 0 && newFolders.length === 0) {
+                    alert('Nothing new to restore - every item and folder in that backup is already in your library.');
+                    return;
+                }
+
+                if (!confirm(`Restore ${newItems.length} item(s) and ${newFolders.length} folder(s) from this backup? Nothing currently in your library will be changed or removed.`)) {
+                    return;
+                }
+
+                appState.items.push(...newItems);
+                appState.folders.push(...newFolders);
+                if (payload.folderColors) {
+                    newFolders.forEach(f => {
+                        if (payload.folderColors[f]) appState.folderColors[f] = payload.folderColors[f];
+                    });
+                }
+
+                saveState();
+                // A restore is exactly the moment the cloud copy may be the
+                // thing that's missing data - push every restored item back
+                // up rather than waiting for its next incidental save.
+                newItems.forEach(item => saveStateToCloud(item));
+                renderLibrary();
+                updateFolderDropdowns();
+                closeModals();
+                alert(`Restored ${newItems.length} item(s) and ${newFolders.length} folder(s).`);
+            };
+            reader.readAsText(file);
         }
 
         function buildTagCloud() {
