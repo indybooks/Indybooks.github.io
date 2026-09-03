@@ -332,7 +332,12 @@
 
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Cover Image (URL or Photo Library)</label>
                 <input type="url" id="bulk-cover-input" placeholder="https://..." class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2">
-                <input type="file" id="bulk-cover-file" accept="image/*" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#FFDDA6] file:text-[#1B3F57]" onchange="handleBulkCoverUpload(event)">
+                <input type="file" id="bulk-cover-file" accept="image/*" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#FFDDA6] file:text-[#1B3F57] mb-2" onchange="handleBulkCoverUpload(event)">
+
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Move to Folder</label>
+                <select id="bulk-folder-select" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8]">
+                    <option value="__nochange__" selected>No Change</option>
+                </select>
             </div>
             <div class="flex justify-end space-x-2 pt-2">
                 <button onclick="closeModals()" class="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer">Cancel</button>
@@ -1478,6 +1483,8 @@
 
         function openBulkEditModal() {
             if (appState.selectedItemIds.length === 0) return;
+            const folderSelect = document.getElementById('bulk-folder-select');
+            if (folderSelect) folderSelect.value = '__nochange__';
             document.getElementById('bulk-edit-modal').classList.remove('hidden');
             document.getElementById('bulk-edit-modal').classList.add('flex');
         }
@@ -1496,6 +1503,11 @@
             const prefix = document.getElementById('bulk-title-prefix').value.trim();
             const author = document.getElementById('bulk-author-input').value.trim();
             const cover = document.getElementById('bulk-cover-input').value.trim();
+            // '__nochange__' (the default) means leave folder alone - '' is
+            // itself a real destination (ungrouped), so it can't double as
+            // "field left blank" the way prefix/author/cover do above.
+            const folderValue = document.getElementById('bulk-folder-select').value;
+            const moveToFolder = folderValue !== '__nochange__';
 
             appState.selectedItemIds.forEach(id => {
                 const item = appState.items.find(i => i.id === id);
@@ -1503,6 +1515,7 @@
                     if (prefix) item.title = prefix + item.title;
                     if (author) item.author = author;
                     if (cover) item.cover = cover;
+                    if (moveToFolder) item.folder = folderValue;
                     saveStateToCloud(item);
                 }
             });
@@ -2462,6 +2475,20 @@
                     select.innerHTML += `<option value="${f}">${f}</option>`;
                 });
             });
+
+            // The bulk-edit select needs a third state its siblings don't:
+            // every other bulk field is "blank = leave unchanged", but a
+            // blank folder value is itself a real destination (ungrouped) -
+            // so it needs its own explicit "No Change" option to mean "don't
+            // touch this field" without that colliding with "move to
+            // ungrouped".
+            const bulkSelect = document.getElementById('bulk-folder-select');
+            if (bulkSelect) {
+                bulkSelect.innerHTML = '<option value="__nochange__" selected>No Change</option><option value="">(None - Ungrouped)</option>';
+                appState.folders.forEach(f => {
+                    bulkSelect.innerHTML += `<option value="${f}">${f}</option>`;
+                });
+            }
         }
 
         function openPlayerModal() { document.getElementById('player-modal').classList.remove('translate-y-full'); }
