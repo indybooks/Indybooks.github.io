@@ -100,6 +100,14 @@
             background: #FFDDA6;
             border-radius: 4px;
         }
+        /* Visual-only preview of the auto-capitalize applied on blur (see
+           toTitleCase/applyTitleCase) - a CSS transform never touches the
+           field's actual value or cursor position, so it can't cause the
+           cursor-jump glitches a live keystroke-by-keystroke JS rewrite
+           would. The real value is normalized once the field loses focus. */
+        .autocap {
+            text-transform: capitalize;
+        }
     </style>
 </head>
 <body class="h-full flex flex-col overflow-hidden relative">
@@ -186,6 +194,10 @@
     <div id="mini-player" class="fixed bottom-0 left-0 right-0 bg-[#1B3F57] text-white border-t border-white/10 shadow-2xl z-40 transition-transform duration-300 pb-safe">
         <div class="w-full bg-white/20 h-1.5 cursor-pointer relative" onclick="seekAudioBar(event)">
             <div id="mini-progress" class="bg-[#FFB452] h-full w-0 transition-all duration-150"></div>
+        </div>
+        <div id="mini-sleep-timer-badge" class="hidden absolute top-2.5 right-3 bg-black/40 text-[10.5px] text-[#FFB452] pl-1.5 pr-2 py-0.5 rounded-full items-center gap-1 cursor-pointer z-10" onclick="event.stopPropagation(); openPlayerModal(); openSleepTimerModal();" title="Sleep timer active - tap to view">
+            <i class="fa-solid fa-moon"></i>
+            <span id="mini-sleep-timer-text">0:00</span>
         </div>
 
         <div class="px-4 py-3 flex items-center justify-between">
@@ -296,7 +308,7 @@
                     <input type="range" id="app-volume-slider" min="0" max="3" step="0.05" value="1" class="w-24 accent-[#FFB452] cursor-pointer" oninput="adjustAppVolume(this.value)">
                     <span id="volume-label" class="text-xs text-white font-bold w-12 text-right">100%</span>
                 </div>
-                <button onclick="openSleepTimerModal()" class="bg-white/10 hover:bg-white/20 rounded-xl px-4 py-2.5 flex items-center gap-2 text-xs text-white cursor-pointer">
+                <button id="sleep-timer-toggle-btn" onclick="openSleepTimerModal()" class="bg-white/10 hover:bg-white/20 rounded-xl px-4 py-2.5 flex items-center gap-2 text-xs text-white cursor-pointer">
                     <i class="fa-solid fa-moon text-[#FFB452]"></i>
                     <span id="sleep-timer-label">Sleep Timer</span>
                 </button>
@@ -313,10 +325,10 @@
             </div>
             <div>
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Title Prefix (Optional)</label>
-                <input type="text" id="bulk-title-prefix" placeholder="e.g. Volume 1 - " class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2">
+                <input type="text" id="bulk-title-prefix" placeholder="e.g. Volume 1 - " class="autocap w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2" onblur="this.value = toTitleCase(this.value)">
 
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Author</label>
-                <input type="text" id="bulk-author-input" placeholder="Update Author across selected" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2">
+                <input type="text" id="bulk-author-input" placeholder="Update Author across selected" class="autocap w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2" onblur="this.value = toTitleCase(this.value)">
 
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Cover Image (URL or Photo Library)</label>
                 <input type="url" id="bulk-cover-input" placeholder="https://..." class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2">
@@ -431,10 +443,10 @@
             </div>
             <div>
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Author</label>
-                <input type="text" id="direct-author-input" placeholder="e.g., J.R.R. Tolkien" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#3F8CB8] mb-3">
+                <input type="text" id="direct-author-input" placeholder="e.g., J.R.R. Tolkien" class="autocap w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#3F8CB8] mb-3" onblur="this.value = toTitleCase(this.value)">
 
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Title</label>
-                <input type="text" id="direct-title-input" placeholder="e.g., The Hobbit Chapter 1" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#3F8CB8] mb-3">
+                <input type="text" id="direct-title-input" placeholder="e.g., The Hobbit Chapter 1" class="autocap w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#3F8CB8] mb-3" onblur="this.value = toTitleCase(this.value)">
                 
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Direct Audio Link (Server / URL)</label>
                 <input type="url" id="direct-url-input" placeholder="https://myserver.com/audio/chapter1.m4b" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#3F8CB8] mb-3">
@@ -485,10 +497,10 @@
             <input type="hidden" id="edit-item-id">
             <div>
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Author</label>
-                <input type="text" id="edit-author-input" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2">
+                <input type="text" id="edit-author-input" class="autocap w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2" onblur="this.value = toTitleCase(this.value)">
 
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Title</label>
-                <input type="text" id="edit-title-input" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2">
+                <input type="text" id="edit-title-input" class="autocap w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2" onblur="this.value = toTitleCase(this.value)">
             </div>
             <div>
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Cover Image (URL or Photo Library)</label>
@@ -630,7 +642,8 @@
             currentId: localStorage.getItem('indybooks_current_id') || null,
             isPlaying: false,
             slothMode: false,
-            sleepTimerTimeout: null
+            sleepTimerTimeout: null,
+            sleepTimerEndsAt: null
         };
 
         const audioEl = document.getElementById('main-audio-element');
@@ -1351,6 +1364,91 @@
             renderLibrary();
         }
 
+        // Same pointer-drag mechanics as item reordering above, but over
+        // appState.folders (a flat name list) instead - no per-folder
+        // grouping to filter by, just every [data-folder-row] in the
+        // library container (which also holds the separate, non-folder
+        // "ungrouped items" block - excluded automatically since it never
+        // gets that attribute).
+        let folderDragState = null;
+
+        function startFolderDrag(folderName, event) {
+            if (event.button !== undefined && event.button !== 0) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const handle = event.currentTarget;
+            const cardEl = handle.closest('[data-folder-row]');
+            if (!cardEl) return;
+
+            folderDragState = {
+                folderName,
+                cardEl,
+                container: cardEl.parentElement,
+                pointerId: event.pointerId,
+                startY: event.clientY,
+                moved: false,
+            };
+            handle.setPointerCapture(event.pointerId);
+            cardEl.style.position = 'relative';
+            cardEl.style.zIndex = '20';
+            cardEl.style.transition = 'none';
+            cardEl.classList.add('shadow-xl');
+
+            handle.addEventListener('pointermove', onFolderDragMove);
+            handle.addEventListener('pointerup', onFolderDragEnd);
+            handle.addEventListener('pointercancel', onFolderDragEnd);
+        }
+
+        function onFolderDragMove(event) {
+            if (!folderDragState) return;
+            const dy = event.clientY - folderDragState.startY;
+            if (Math.abs(dy) > 3) folderDragState.moved = true;
+            folderDragState.cardEl.style.transform = `translateY(${dy}px)`;
+        }
+
+        function onFolderDragEnd(event) {
+            if (!folderDragState) return;
+            const { folderName, cardEl, container, moved } = folderDragState;
+            const handle = event.currentTarget;
+            handle.removeEventListener('pointermove', onFolderDragMove);
+            handle.removeEventListener('pointerup', onFolderDragEnd);
+            handle.removeEventListener('pointercancel', onFolderDragEnd);
+            try { handle.releasePointerCapture(event.pointerId); } catch (e) {}
+
+            cardEl.style.transform = '';
+            cardEl.style.position = '';
+            cardEl.style.zIndex = '';
+            cardEl.style.transition = '';
+            cardEl.classList.remove('shadow-xl');
+            folderDragState = null;
+
+            if (!moved) return; // a tap on the handle, not a drag - no-op
+
+            const folderCards = [...container.querySelectorAll('[data-folder-row]')].filter(el => el !== cardEl);
+            const dropY = event.clientY;
+            let targetFolder = null, insertAfter = false;
+            for (const sib of folderCards) {
+                const rect = sib.getBoundingClientRect();
+                if (dropY >= rect.top && dropY <= rect.bottom) {
+                    targetFolder = sib.dataset.folderName;
+                    insertAfter = dropY > rect.top + rect.height / 2;
+                    break;
+                }
+            }
+            if (!targetFolder) return;
+
+            const draggedIdx = appState.folders.indexOf(folderName);
+            if (draggedIdx === -1) return;
+            appState.folders.splice(draggedIdx, 1);
+            let targetIdx = appState.folders.indexOf(targetFolder);
+            if (targetIdx === -1) { appState.folders.splice(draggedIdx, 0, folderName); return; }
+            if (insertAfter) targetIdx += 1;
+            appState.folders.splice(targetIdx, 0, folderName);
+            saveState();
+            renderLibrary();
+            updateFolderDropdowns();
+        }
+
         function toggleItemSelection(itemId, event) {
             event.stopPropagation();
             if (appState.selectedItemIds.includes(itemId)) {
@@ -1495,15 +1593,20 @@
                 const isCollapsed = appState.collapsedFolders.includes(folder);
                 const folderEl = document.createElement('div');
                 folderEl.className = 'bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden';
+                folderEl.dataset.folderRow = '';
+                folderEl.dataset.folderName = folder;
                 folderEl.innerHTML = `
                     <div class="px-4 py-3 bg-gray-50 flex items-center justify-between border-b border-gray-100 cursor-pointer" onclick="toggleFolderCollapse('${folder}')">
-                        <div class="flex items-center space-x-2 font-semibold text-sm text-[#1B3F57]">
+                        <div class="flex items-center space-x-2 font-semibold text-sm text-[#1B3F57] min-w-0">
+                            <div class="drag-handle shrink-0 -ml-1 w-6 h-6 flex items-center justify-center text-gray-400 hover:text-[#3F8CB8] active:text-[#3F8CB8] cursor-grab active:cursor-grabbing touch-none select-none" title="Drag to reorder folder" onpointerdown="startFolderDrag('${folder}', event)" onclick="event.stopPropagation()">
+                                <i class="fa-solid fa-grip-vertical text-sm"></i>
+                            </div>
                             <i class="fa-solid ${isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'} text-xs text-gray-400"></i>
-                            <i class="fa-solid fa-folder" style="color: ${folderColor}"></i>
-                            <span>${folder}</span>
-                            <span class="text-xs text-gray-600 font-normal">(${folderItems.length})</span>
+                            <i class="fa-solid fa-folder shrink-0" style="color: ${folderColor}"></i>
+                            <span class="truncate">${folder}</span>
+                            <span class="text-xs text-gray-600 font-normal shrink-0">(${folderItems.length})</span>
                         </div>
-                        <div class="flex items-center space-x-2" onclick="event.stopPropagation()">
+                        <div class="flex items-center space-x-2 shrink-0" onclick="event.stopPropagation()">
                             <input type="color" value="${folderColor}" onchange="updateFolderColor('${folder}', this.value)" class="w-5 h-5 rounded cursor-pointer border-none bg-transparent" title="Change Folder Color">
                             <button onclick="deleteFolder('${folder}')" class="text-xs text-red-500 hover:text-red-700 p-1 cursor-pointer" title="Delete Folder">
                                 <i class="fa-solid fa-trash"></i>
@@ -1753,12 +1856,40 @@
         }
 
         function deleteFolder(folderName) {
-            if (!confirm(`Are you sure you want to delete the folder "${folderName}"? Items inside will become ungrouped.`)) return;
+            const itemsInFolder = appState.items.filter(i => i.folder === folderName);
+
+            let deleteContents = false;
+            if (itemsInFolder.length === 0) {
+                if (!confirm(`Delete the empty folder "${folderName}"?`)) return;
+            } else {
+                // OK deletes the folder AND everything in it in one go;
+                // Cancel keeps the original behavior (folder only, items
+                // survive as ungrouped) - confirmed a second time below so
+                // Cancel here can't be misread as "do nothing at all".
+                deleteContents = confirm(
+                    `"${folderName}" has ${itemsInFolder.length} item(s).\n\n` +
+                    `Press OK to delete the folder AND all ${itemsInFolder.length} item(s) inside it. This cannot be undone.\n` +
+                    `Press Cancel to delete just the folder - its items will be kept, ungrouped.`
+                );
+                if (!deleteContents && !confirm(`Delete the folder "${folderName}" and ungroup its ${itemsInFolder.length} item(s)? (The items themselves will not be deleted.)`)) {
+                    return;
+                }
+            }
+
+            if (deleteContents) {
+                const deletedIds = new Set(itemsInFolder.map(i => i.id));
+                itemsInFolder.forEach(item => deleteItemInternal(item.id));
+                appState.selectedItemIds = appState.selectedItemIds.filter(id => !deletedIds.has(id));
+            } else {
+                appState.items.forEach(i => {
+                    if (i.folder === folderName) i.folder = '';
+                });
+            }
+
             appState.folders = appState.folders.filter(f => f !== folderName);
             delete appState.folderColors[folderName];
-            appState.items.forEach(i => {
-                if (i.folder === folderName) i.folder = '';
-            });
+            updateQueueBadge();
+            updateBulkBar();
             saveState();
             renderLibrary();
             updateFolderDropdowns();
@@ -2528,19 +2659,61 @@
             }).join('');
         }
 
+        // sleepTimerEndsAt is a plain timestamp, not persisted with the rest
+        // of appState - a pending setTimeout doesn't survive a reload
+        // either, so there's nothing to restore anyway; both simply reset
+        // together, which is correct.
+        let sleepTimerInterval = null;
+
         function setSleepTimer(minutes) {
             if (appState.sleepTimerTimeout) clearTimeout(appState.sleepTimerTimeout);
+            appState.sleepTimerEndsAt = Date.now() + minutes * 60 * 1000;
             appState.sleepTimerTimeout = setTimeout(() => {
                 audioEl.pause();
                 appState.isPlaying = false;
                 updatePlayerUI();
+                stopSleepTimerIndicator();
             }, minutes * 60 * 1000);
+            startSleepTimerIndicator();
             closeModals();
         }
 
         function cancelSleepTimer() {
             if (appState.sleepTimerTimeout) clearTimeout(appState.sleepTimerTimeout);
+            stopSleepTimerIndicator();
             closeModals();
+        }
+
+        function startSleepTimerIndicator() {
+            if (sleepTimerInterval) clearInterval(sleepTimerInterval);
+            updateSleepTimerIndicator();
+            sleepTimerInterval = setInterval(updateSleepTimerIndicator, 1000);
+        }
+
+        function stopSleepTimerIndicator() {
+            if (sleepTimerInterval) clearInterval(sleepTimerInterval);
+            sleepTimerInterval = null;
+            appState.sleepTimerEndsAt = null;
+            document.getElementById('sleep-timer-label').innerText = 'Sleep Timer';
+            document.getElementById('sleep-timer-toggle-btn')?.classList.remove('bg-white/35', 'ring-2', 'ring-[#FFB452]');
+            document.getElementById('mini-sleep-timer-badge').classList.add('hidden');
+        }
+
+        function updateSleepTimerIndicator() {
+            const msLeft = appState.sleepTimerEndsAt - Date.now();
+            if (msLeft <= 0) { stopSleepTimerIndicator(); return; }
+            const totalSeconds = Math.ceil(msLeft / 1000);
+            const mm = Math.floor(totalSeconds / 60);
+            const ss = totalSeconds % 60;
+            const label = `${mm}:${ss < 10 ? '0' : ''}${ss}`;
+
+            document.getElementById('sleep-timer-label').innerText = `${label} left`;
+            document.getElementById('sleep-timer-toggle-btn')?.classList.add('bg-white/35', 'ring-2', 'ring-[#FFB452]');
+
+            const badge = document.getElementById('mini-sleep-timer-badge');
+            badge.classList.remove('hidden');
+            badge.classList.add('flex');
+            document.getElementById('mini-sleep-timer-text').innerText = label;
         }
 
         const BACKUP_FORMAT_VERSION = 1;
@@ -2762,6 +2935,16 @@
             const s = Math.floor(secs % 60);
             if (h > 0) return `${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
             return `${m}:${s < 10 ? '0' : ''}${s}`;
+        }
+
+        // Capitalizes just the first letter of each word - whitespace and
+        // hyphens count as word starts ("mother-in-law" -> "Mother-In-Law"),
+        // apostrophes deliberately don't, so a contraction doesn't get
+        // mangled ("mother's day" -> "Mother's Day", not "Mother'S Day").
+        // Only touches letters that need capitalizing; everything else
+        // (existing capitals, numbers, punctuation) is left exactly as typed.
+        function toTitleCase(str) {
+            return str.replace(/(^|[\s-])([a-z])/g, (match, boundary, letter) => boundary + letter.toUpperCase());
         }
     </script>
 </body>
