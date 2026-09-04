@@ -921,7 +921,9 @@
         async function uploadLocalAudioToCloud(item, blob) {
             if (!supabaseClient || !currentUser) return;
             if (blob.size > CLOUD_MAX_UPLOAD_BYTES) {
-                console.warn(`Skipping cloud sync for "${item.title}": ${(blob.size / 1e6).toFixed(0)}MB exceeds the ${(CLOUD_MAX_UPLOAD_BYTES / 1e6).toFixed(0)}MB cross-device sync limit. It will keep playing on this device.`);
+                const msg = `"${item.title}" is ${(blob.size / 1e6).toFixed(0)}MB, over the ${(CLOUD_MAX_UPLOAD_BYTES / 1e6).toFixed(0)}MB cross-device sync limit, so it wasn't uploaded to your account. It will keep playing on this device only.`;
+                console.warn(msg);
+                showCloudSyncError(msg);
                 return;
             }
             const path = `${currentUser.id}/${item.id}`;
