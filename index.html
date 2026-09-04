@@ -710,10 +710,28 @@
             // function treats as "local" state. Deciding what's local up
             // front closes that window entirely.
             const localSnapshot = appState.items;
-            const { data, error } = await supabaseClient
+            let { data, error } = await supabaseClient
                 .from('media_items')
                 .select('*, bookmarks(*)')
                 .eq('user_id', userId);
+            if (error) {
+                // The bookmarks(*) embed depends on PostgREST already
+                // knowing about the foreign key between media_items and
+                // bookmarks - its schema cache can lag behind a schema
+                // change (e.g. right after running schema.sql) until it's
+                // reloaded, which surfaces as exactly this "relationship
+                // not found" error. Don't let a broken embed take the whole
+                // library sync down with it - retry without bookmarks so
+                // titles/covers/progress/folders still come through; only
+                // bookmarks themselves are affected.
+                console.warn('Bookmark-embedded library fetch failed, retrying without it:', error.message);
+                const fallback = await supabaseClient.from('media_items').select('*').eq('user_id', userId);
+                data = fallback.data;
+                error = fallback.error;
+                if (!error) {
+                    showCloudSyncError("Synced your library, but bookmarks couldn't load - this usually means Supabase's schema cache needs a refresh. In the SQL editor, run: NOTIFY pgrst, 'reload schema';");
+                }
+            }
             if (error) {
                 // This used to fail silently, which is how a broken sync
                 // could look "successful" while quietly never happening.
