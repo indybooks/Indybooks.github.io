@@ -962,50 +962,42 @@
         // removed items - anything else with fewer items than last
         // persisted is refused rather than saved, so a bug can't silently
         // overwrite the one copy of the library with a smaller one.
-        function saveState(opts = {}) {
-            const allowShrink = !!opts.allowShrink;
+        // A resized cover (see resizeImageToDataUrl) comes out to tens-to-
+        // low-hundreds of KB. Anything past this either didn't go through
+        // that resize - a leftover from before it existed, still sitting in
+        // memory this session - or something else entirely wrote a raw
+        // value in. Used both to refuse a new oversized value at the point
+        // of entry and, in saveState()'s quota recovery below, to find and
+        // clear whatever's already poisoning a save that keeps failing.
+        const MAX_COVER_DATA_LENGTH = 300000;
 
-            if (!allowShrink && appState.items.length < lastPersistedItemCount) {
-                console.error(
-                    `saveState() blocked a write that would have silently dropped the library from ${lastPersistedItemCount} to ${appState.items.length} item(s). ` +
-                    `If this reduction is actually intentional, the caller needs to pass saveState({ allowShrink: true }). This save was skipped - nothing was lost.`
-                );
-                console.trace('saveState() call site for the blocked write');
-                try {
-                    const log = JSON.parse(localStorage.getItem('indybooks_blocked_shrink_log') || '[]');
-                    log.push({ at: new Date().toISOString(), from: lastPersistedItemCount, to: appState.items.length, stack: new Error().stack });
-                    localStorage.setItem('indybooks_blocked_shrink_log', JSON.stringify(log.slice(-10)));
-                } catch (e) {
-                    // Diagnostics are best-effort only - never let a logging
-                    // failure be the reason the actual guard above didn't run.
-                }
-                return false;
-            }
+        let lastQuotaAlertAt = 0;
+        // A single oversized item makes EVERY future saveState() call fail
+        // identically - including the ~4x/second ones onAudioTimeUpdate
+        // makes during playback - which without this turns one real problem
+        // into an alert() flood the user can't dismiss their way out of.
+        function showQuotaAlert(message) {
+            const now = Date.now();
+            if (now - lastQuotaAlertAt < 8000) return;
+            lastQuotaAlertAt = now;
+            alert(message);
+        }
 
-            try {
-                localStorage.setItem('indybooks_items', JSON.stringify(appState.items));
-                localStorage.setItem('indybooks_folders', JSON.stringify(appState.folders));
-                localStorage.setItem('indybooks_folder_colors', JSON.stringify(appState.folderColors));
-                localStorage.setItem('indybooks_collapsed', JSON.stringify(appState.collapsedFolders));
-                localStorage.setItem('indybooks_queue', JSON.stringify(appState.queue));
-                localStorage.setItem('indybooks_start_trim', appState.startTrim);
-                localStorage.setItem('indybooks_end_trim', appState.endTrim);
-                if (appState.currentId) localStorage.setItem('indybooks_current_id', appState.currentId);
-                else localStorage.removeItem('indybooks_current_id');
-                if (appState.goodreadsUser) localStorage.setItem('indybooks_goodreads', appState.goodreadsUser);
-                else localStorage.removeItem('indybooks_goodreads');
-            } catch (e) {
-                // A full localStorage (browser quota, ~5-10MB typically) used
-                // to throw here uncaught, aborting the function silently
-                // mid-write - cloud sync and the recovery snapshot below
-                // never ran, and whatever called saveState() never got to
-                // its own next line either (e.g. saveItemEdits() closing the
-                // modal). Surface it instead of failing invisibly.
-                console.error('saveState() could not write to localStorage:', e);
-                alert("Couldn't save - your browser's local storage is full. A large cover image is the most common cause; try a smaller one.");
-                return false;
-            }
+        function persistCoreState() {
+            localStorage.setItem('indybooks_items', JSON.stringify(appState.items));
+            localStorage.setItem('indybooks_folders', JSON.stringify(appState.folders));
+            localStorage.setItem('indybooks_folder_colors', JSON.stringify(appState.folderColors));
+            localStorage.setItem('indybooks_collapsed', JSON.stringify(appState.collapsedFolders));
+            localStorage.setItem('indybooks_queue', JSON.stringify(appState.queue));
+            localStorage.setItem('indybooks_start_trim', appState.startTrim);
+            localStorage.setItem('indybooks_end_trim', appState.endTrim);
+            if (appState.currentId) localStorage.setItem('indybooks_current_id', appState.currentId);
+            else localStorage.removeItem('indybooks_current_id');
+            if (appState.goodreadsUser) localStorage.setItem('indybooks_goodreads', appState.goodreadsUser);
+            else localStorage.removeItem('indybooks_goodreads');
+        }
 
+        function finishSuccessfulSave() {
             lastPersistedItemCount = appState.items.length;
 
             if (appState.currentId) {
@@ -1034,7 +1026,69 @@
                     console.warn('Could not write recovery snapshot:', e);
                 }
             }
+        }
 
+        function saveState(opts = {}) {
+            const allowShrink = !!opts.allowShrink;
+
+            if (!allowShrink && appState.items.length < lastPersistedItemCount) {
+                console.error(
+                    `saveState() blocked a write that would have silently dropped the library from ${lastPersistedItemCount} to ${appState.items.length} item(s). ` +
+                    `If this reduction is actually intentional, the caller needs to pass saveState({ allowShrink: true }). This save was skipped - nothing was lost.`
+                );
+                console.trace('saveState() call site for the blocked write');
+                try {
+                    const log = JSON.parse(localStorage.getItem('indybooks_blocked_shrink_log') || '[]');
+                    log.push({ at: new Date().toISOString(), from: lastPersistedItemCount, to: appState.items.length, stack: new Error().stack });
+                    localStorage.setItem('indybooks_blocked_shrink_log', JSON.stringify(log.slice(-10)));
+                } catch (e) {
+                    // Diagnostics are best-effort only - never let a logging
+                    // failure be the reason the actual guard above didn't run.
+                }
+                return false;
+            }
+
+            try {
+                persistCoreState();
+            } catch (e) {
+                // A full localStorage (browser quota, ~5-10MB typically) used
+                // to throw here uncaught, aborting the function silently
+                // mid-write - cloud sync and the recovery snapshot never ran,
+                // and whatever called saveState() never got to its own next
+                // line either (e.g. saveItemEdits() closing the modal).
+                console.error('saveState() could not write to localStorage:', e);
+
+                // Self-heal rather than fail forever: an oversized cover is
+                // the near-universal cause, and once one is stuck in
+                // appState.items every future save - including the one
+                // importLibraryBackup() triggers right after "restoring" -
+                // fails the exact same way, with no way back in from inside
+                // the app. Strip any such covers and retry once before
+                // giving up.
+                const oversized = appState.items.filter(i => i.cover && i.cover.length > MAX_COVER_DATA_LENGTH);
+                if (oversized.length > 0) {
+                    oversized.forEach(i => { i.cover = ''; });
+                    try {
+                        persistCoreState();
+                    } catch (e2) {
+                        console.error('saveState() still could not write after clearing oversized covers:', e2);
+                        showQuotaAlert("Couldn't save - your browser's local storage is full, even after removing oversized cover images. Try deleting a few items from your library.");
+                        return false;
+                    }
+                    finishSuccessfulSave();
+                    renderLibrary();
+                    showQuotaAlert(
+                        `Removed ${oversized.length} oversized cover image${oversized.length > 1 ? 's' : ''} to free up space so the rest of your library could be saved. ` +
+                        `You can add a smaller photo for: ${oversized.map(i => i.title).join(', ')}.`
+                    );
+                    return true;
+                }
+
+                showQuotaAlert("Couldn't save - your browser's local storage is full. A large cover image is the most common cause; try a smaller one.");
+                return false;
+            }
+
+            finishSuccessfulSave();
             return true;
         }
 
@@ -1598,6 +1652,10 @@
             const prefix = document.getElementById('bulk-title-prefix').value.trim();
             const author = document.getElementById('bulk-author-input').value.trim();
             const cover = document.getElementById('bulk-cover-input').value.trim();
+            if (cover && cover.length > MAX_COVER_DATA_LENGTH) {
+                alert('That cover image is too large to save. Please choose a different photo.');
+                return;
+            }
             // '__nochange__' (the default) means leave folder alone - '' is
             // itself a real destination (ungrouped), so it can't double as
             // "field left blank" the way prefix/author/cover do above.
@@ -2692,7 +2750,14 @@
             if (!item) return;
             item.author = document.getElementById('edit-author-input').value.trim() || item.author;
             item.title = document.getElementById('edit-title-input').value.trim() || item.title;
-            item.cover = document.getElementById('edit-cover-input').value.trim() || item.cover;
+            const newCover = document.getElementById('edit-cover-input').value.trim();
+            if (newCover) {
+                if (newCover.length > MAX_COVER_DATA_LENGTH) {
+                    alert('That cover image is too large to save. Please choose a different photo.');
+                    return;
+                }
+                item.cover = newCover;
+            }
             item.folder = document.getElementById('edit-folder-select').value;
             const rawTags = document.getElementById('edit-tags-input').value;
             item.tags = rawTags ? rawTags.split(',').map(t => t.trim()).filter(Boolean) : [];
@@ -2973,6 +3038,13 @@
 
                 const existingIds = new Set(appState.items.map(i => i.id));
                 const newItems = items.filter(i => i && i.id && !existingIds.has(i.id));
+                // A backup taken while an oversized cover was already stuck
+                // in the library (see saveState()'s quota recovery) would
+                // otherwise just reintroduce the exact same unsavable state
+                // the moment it's restored.
+                newItems.forEach(i => {
+                    if (i.cover && i.cover.length > MAX_COVER_DATA_LENGTH) i.cover = '';
+                });
                 const newFolders = Array.isArray(payload.folders) ? payload.folders.filter(f => !appState.folders.includes(f)) : [];
 
                 if (newItems.length === 0 && newFolders.length === 0) {
