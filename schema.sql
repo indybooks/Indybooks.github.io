@@ -36,6 +36,7 @@ create table if not exists public.media_items (
   id            text primary key,
   user_id       uuid not null references auth.users (id) on delete cascade,
   title         text not null default 'Untitled',
+  author        text default '',
   type          text not null default 'audiobook',
   audio_url     text default '',
   -- Set when the audio lives in Supabase Storage instead of at a public URL.
