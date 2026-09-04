@@ -1523,6 +1523,10 @@
 
         function openBulkEditModal() {
             if (appState.selectedItemIds.length === 0) return;
+            document.getElementById('bulk-title-prefix').value = '';
+            document.getElementById('bulk-author-input').value = '';
+            document.getElementById('bulk-cover-input').value = '';
+            document.getElementById('bulk-cover-file').value = '';
             const folderSelect = document.getElementById('bulk-folder-select');
             if (folderSelect) folderSelect.value = '__nochange__';
             document.getElementById('bulk-edit-modal').classList.remove('hidden');
@@ -2537,27 +2541,62 @@
 
         function openPlayerModal() { document.getElementById('player-modal').classList.remove('translate-y-full'); }
         function closePlayerModal() { document.getElementById('player-modal').classList.add('translate-y-full'); }
-        function openAuthModal() { document.getElementById('auth-modal').classList.remove('hidden'); document.getElementById('auth-modal').classList.add('flex'); }
+        function openAuthModal() {
+            // Sign-in fields are a one-time-entry form, not a setting - left
+            // filled in, a typed password sits there indefinitely (worse on
+            // a shared device) until someone notices and clears it by hand.
+            // The Supabase URL/key fields above them are the app's own
+            // config values, not something a user re-types each time, so
+            // those are deliberately left alone.
+            document.getElementById('auth-email-input').value = '';
+            document.getElementById('auth-pass-input').value = '';
+            document.getElementById('auth-modal').classList.remove('hidden');
+            document.getElementById('auth-modal').classList.add('flex');
+        }
 
-        function openGoodreadsModal() { 
+        function openGoodreadsModal() {
             closeModals();
+            document.getElementById('goodreads-user-id').value = '';
+            document.getElementById('goodreads-csv-file').value = '';
             const gm = document.getElementById('goodreads-modal');
-            gm.classList.remove('hidden'); 
-            gm.classList.add('flex'); 
+            gm.classList.remove('hidden');
+            gm.classList.add('flex');
         }
         function closeGoodreadsModal() {
             document.getElementById('goodreads-modal').classList.add('hidden');
             document.getElementById('goodreads-modal').classList.remove('flex');
         }
 
-        function openAddFeedModal() { document.getElementById('add-feed-modal').classList.remove('hidden'); document.getElementById('add-feed-modal').classList.add('flex'); }
-        function openAddUrlModal() { updateFolderDropdowns(); document.getElementById('add-url-modal').classList.remove('hidden'); document.getElementById('add-url-modal').classList.add('flex'); }
-        function openCreateFolderModal() { document.getElementById('create-folder-modal').classList.remove('hidden'); document.getElementById('create-folder-modal').classList.add('flex'); }
+        function openAddFeedModal() {
+            document.getElementById('rss-url-input').value = '';
+            document.getElementById('add-feed-modal').classList.remove('hidden');
+            document.getElementById('add-feed-modal').classList.add('flex');
+        }
+        function openAddUrlModal() {
+            document.getElementById('direct-author-input').value = '';
+            document.getElementById('direct-title-input').value = '';
+            document.getElementById('direct-url-input').value = '';
+            document.getElementById('direct-cover-input').value = '';
+            // Rebuilds the <select>'s options from scratch, which as a side
+            // effect already resets it to the first one ("Ungrouped") - no
+            // separate reset needed for the folder field.
+            updateFolderDropdowns();
+            document.getElementById('add-url-modal').classList.remove('hidden');
+            document.getElementById('add-url-modal').classList.add('flex');
+        }
+        function openCreateFolderModal() {
+            document.getElementById('folder-name-input').value = '';
+            document.getElementById('folder-color-input').value = '#3F8CB8';
+            document.getElementById('create-folder-modal').classList.remove('hidden');
+            document.getElementById('create-folder-modal').classList.add('flex');
+        }
         function openSettingsModal() { document.getElementById('settings-modal').classList.remove('hidden'); document.getElementById('settings-modal').classList.add('flex'); }
-        function openSearchModal() { 
+        function openSearchModal() {
+            document.getElementById('search-input').value = '';
+            document.getElementById('search-results').innerHTML = '';
             buildTagCloud();
-            document.getElementById('search-modal').classList.remove('hidden'); 
-            document.getElementById('search-modal').classList.add('flex'); 
+            document.getElementById('search-modal').classList.remove('hidden');
+            document.getElementById('search-modal').classList.add('flex');
         }
         function openSleepTimerModal() { document.getElementById('sleep-timer-modal').classList.remove('hidden'); document.getElementById('sleep-timer-modal').classList.add('flex'); }
         function openBookmarksModal() { renderBookmarksList(); document.getElementById('bookmarks-modal').classList.remove('hidden'); document.getElementById('bookmarks-modal').classList.add('flex'); }
