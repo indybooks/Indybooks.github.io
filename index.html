@@ -8,6 +8,13 @@
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Resumable (TUS) uploads for local audio files: Safari has known
+         reliability problems with large single-shot fetch/XHR request
+         bodies (a multi-MB audiobook can fail with a generic "Load
+         failed", unrelated to file content or network quality). Chunking
+         the upload and allowing it to resume after a dropped connection is
+         exactly what this protocol exists for. -->
+    <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.1.0/dist/tus.min.js"></script>
     <link rel="manifest" href="manifest.json">
     <!-- No favicon/apple-touch-icon was ever declared, so the browser tab and
          iOS "Add to Home Screen" fell back to a generic icon - the real logo
@@ -384,6 +391,7 @@
                     <i class="fa-solid fa-cloud-arrow-up text-lg text-green-600"></i>
                 </div>
                 <button onclick="fetchUserLibrary(currentUser.id)" class="w-full py-2.5 bg-[#3F8CB8] text-white rounded-xl text-xs font-semibold shadow cursor-pointer">Sync From Cloud Now</button>
+                <button id="retry-cloud-sync-btn" onclick="retryCloudSync()" class="w-full py-2.5 bg-[#FFB452] text-[#1B3F57] rounded-xl text-xs font-semibold shadow cursor-pointer">Retry Cloud Sync (Push Existing Library)</button>
                 <button onclick="supabaseSignOut()" class="w-full py-2 bg-red-100 text-red-700 rounded-xl text-xs font-semibold cursor-pointer">Sign Out</button>
             </div>
         </div>
@@ -883,15 +891,17 @@
             }
         }
 
+        // Returns true/false so callers (notably retryCloudSync) can track
+        // real per-item outcomes instead of guessing from side effects.
         async function saveStateToCloud(item) {
-            if (!supabaseClient || !currentUser) return;
+            if (!supabaseClient || !currentUser) return false;
             // A local item only has something worth syncing once its bytes
             // have actually reached Storage (storagePath set by
             // uploadLocalAudioToCloud) - before that, item.url is just a
             // blob: URL, meaningless outside this browser tab's session.
             // Syncing it early would create a cloud row that looks synced
             // but can never actually play anywhere.
-            if (item.local && !item.storagePath) return;
+            if (item.local && !item.storagePath) return false;
             const { error } = await supabaseClient.from('media_items').upsert({
                 id: item.id,
                 user_id: currentUser.id,
@@ -916,7 +926,9 @@
             if (error) {
                 console.error('Cloud save failed for', item.id, error.message);
                 showCloudSyncError(`Couldn't sync "${item.title}" to your account: ${error.message}`);
+                return false;
             }
+            return true;
         }
 
         async function deleteStateFromCloud(id) {
@@ -926,6 +938,80 @@
                 console.error('Cloud delete failed for', id, error.message);
                 showCloudSyncError(`Couldn't remove an item from your account: ${error.message}`);
             }
+        }
+
+        // A cloud upload/sync only ever runs once, at the moment an item is
+        // added - so anything that failed before today's fixes (missing
+        // Storage bucket, stale schema cache, the missing author column)
+        // never gets a second chance on its own. This walks the whole
+        // library and retries both halves - the metadata upsert and, for
+        // local files that never got a storagePath, the audio upload too -
+        // so existing items don't have to be deleted and re-added by hand.
+        async function retryCloudSync() {
+            if (!supabaseClient || !currentUser) {
+                alert('Please connect and sign in to your account first.');
+                return;
+            }
+            if (appState.items.length === 0) {
+                alert('Your library is empty - nothing to sync.');
+                return;
+            }
+            const pendingAudioCount = appState.items.filter(i => i.local && !i.storagePath).length;
+            const confirmMsg = `Retry syncing your library (${appState.items.length} item(s)) to your account now?` +
+                (pendingAudioCount > 0
+                    ? ` ${pendingAudioCount} of them also need their audio uploaded, which can take a while depending on file sizes and your connection - keep this tab open and active until it finishes.`
+                    : '');
+            if (!confirm(confirmMsg)) return;
+
+            const btn = document.getElementById('retry-cloud-sync-btn');
+            const originalLabel = btn ? btn.innerText : '';
+            if (btn) btn.disabled = true;
+
+            let metadataFailed = 0, audioUploaded = 0, audioFailed = 0, audioMissing = 0;
+
+            for (let i = 0; i < appState.items.length; i++) {
+                const item = appState.items[i];
+                if (btn) btn.innerText = `Syncing ${i + 1} of ${appState.items.length}...`;
+
+                const needsAudioUpload = item.local && !item.storagePath;
+                if (needsAudioUpload) {
+                    let blob = null;
+                    try {
+                        blob = await loadLocalAudio(item.id);
+                    } catch (e) {
+                        console.error('Retry: could not read local audio for', item.id, e);
+                    }
+                    if (!blob) {
+                        audioMissing++;
+                    } else {
+                        try {
+                            await uploadLocalAudioToCloud(item, blob);
+                        } catch (e) {
+                            console.error('Retry: cloud upload failed for', item.id, e);
+                        }
+                        if (item.storagePath) audioUploaded++; else audioFailed++;
+                    }
+                }
+
+                // Only worth attempting the metadata upsert once the item
+                // isn't still blocked on its audio reaching Storage first
+                // (see saveStateToCloud's own guard for why).
+                if (!(item.local && !item.storagePath)) {
+                    const ok = await saveStateToCloud(item);
+                    if (!ok) metadataFailed++;
+                }
+            }
+
+            saveState();
+            if (btn) { btn.disabled = false; btn.innerText = originalLabel; }
+
+            const parts = [`Retry finished for ${appState.items.length} item(s).`];
+            if (audioUploaded > 0) parts.push(`${audioUploaded} audio file${audioUploaded > 1 ? 's' : ''} newly uploaded.`);
+            if (audioFailed > 0) parts.push(`${audioFailed} audio upload${audioFailed > 1 ? 's' : ''} still failed - see the alerts above for why.`);
+            if (audioMissing > 0) parts.push(`${audioMissing} item${audioMissing > 1 ? 's' : ''} no longer ${audioMissing > 1 ? 'have a' : 'has a'} saved copy on this device - re-add ${audioMissing > 1 ? 'them' : 'it'} from the original file.`);
+            if (metadataFailed > 0) parts.push(`${metadataFailed} item${metadataFailed > 1 ? 's' : ''} failed to sync - see the alerts above for why.`);
+            if (audioUploaded === 0 && audioFailed === 0 && audioMissing === 0 && metadataFailed === 0) parts.push('Everything synced successfully.');
+            alert(parts.join(' '));
         }
 
         // --- Cloud Storage for local uploads --------------------------------
@@ -945,18 +1031,73 @@
                 return;
             }
             const path = `${currentUser.id}/${item.id}`;
-            const { error } = await supabaseClient.storage.from(AUDIO_BUCKET).upload(path, blob, {
-                upsert: true,
-                contentType: blob.type || 'application/octet-stream',
-                cacheControl: '3600',
-            });
-            if (error) {
-                console.error('Cloud audio upload failed for', item.id, error.message);
-                showCloudSyncError(`Couldn't upload "${item.title}" to your account: ${error.message}`);
+
+            // typeof tus === 'undefined' only if the CDN script failed to
+            // load (ad blocker, offline at page-load time) - fall back to a
+            // plain single-shot upload rather than never uploading at all.
+            if (typeof tus === 'undefined') {
+                const { error } = await supabaseClient.storage.from(AUDIO_BUCKET).upload(path, blob, {
+                    upsert: true,
+                    contentType: blob.type || 'application/octet-stream',
+                    cacheControl: '3600',
+                });
+                if (error) {
+                    console.error('Cloud audio upload failed for', item.id, error.message);
+                    showCloudSyncError(`Couldn't upload "${item.title}" to your account: ${error.message}`);
+                    return;
+                }
+                item.storagePath = path;
+                saveState();
                 return;
             }
-            item.storagePath = path;
-            saveState();
+
+            // Resumable (TUS) upload: a single large fetch/XHR request body
+            // is a known Safari reliability weak point (fails outright with
+            // a generic "Load failed", independent of file content or
+            // network quality). Chunking the transfer, and allowing it to
+            // resume after a dropped connection instead of restarting from
+            // zero, is exactly what this protocol is for.
+            const { data: sessionData } = await supabaseClient.auth.getSession();
+            const accessToken = sessionData && sessionData.session ? sessionData.session.access_token : null;
+            if (!accessToken) return;
+
+            await new Promise(resolve => {
+                const upload = new tus.Upload(blob, {
+                    endpoint: `${SUPABASE_URL}/storage/v1/upload/resumable`,
+                    retryDelays: [0, 3000, 5000, 10000, 20000],
+                    headers: {
+                        authorization: `Bearer ${accessToken}`,
+                        'x-upsert': 'true',
+                    },
+                    uploadDataDuringCreation: true,
+                    removeFingerprintOnSuccess: true,
+                    metadata: {
+                        bucketName: AUDIO_BUCKET,
+                        objectName: path,
+                        contentType: blob.type || 'application/octet-stream',
+                        cacheControl: '3600',
+                    },
+                    // Must be a multiple of 256KiB; 6MB balances request
+                    // count against how much of a dropped chunk gets redone.
+                    chunkSize: 6 * 1024 * 1024,
+                    onError: err => {
+                        console.error('Cloud audio upload failed for', item.id, err);
+                        showCloudSyncError(`Couldn't upload "${item.title}" to your account: ${err && err.message ? err.message : err}`);
+                        resolve();
+                    },
+                    onSuccess: () => {
+                        item.storagePath = path;
+                        saveState();
+                        resolve();
+                    },
+                });
+                upload.findPreviousUploads()
+                    .then(previousUploads => {
+                        if (previousUploads.length > 0) upload.resumeFromPreviousUpload(previousUploads[0]);
+                        upload.start();
+                    })
+                    .catch(() => upload.start());
+            });
         }
 
         async function downloadCloudAudio(path) {
