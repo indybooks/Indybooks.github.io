@@ -44,6 +44,17 @@ self.addEventListener('activate', event => {
 // Everything else (CDN libs, icons) is cache-first since it's either
 // versioned in its URL or safe to serve slightly stale.
 self.addEventListener('fetch', event => {
+    // Never intercept anything but GET. There's nothing to cache for a
+    // POST/PUT/PATCH/DELETE anyway (Supabase auth, REST upserts, Storage
+    // uploads), and routing one through respondWith()/fetch(event.request)
+    // means re-reading the original request's body - which Safari's
+    // Service Worker implementation can fail on a large body with
+    // "TypeError: Load failed", turning every cross-device audio upload
+    // into a guaranteed failure with no way to retry around it. Returning
+    // here leaves the event unhandled, so the browser makes the request
+    // exactly as if no service worker existed.
+    if (event.request.method !== 'GET') return;
+
     if (event.request.mode === 'navigate') {
         event.respondWith(
             fetch(event.request)
