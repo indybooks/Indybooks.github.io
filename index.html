@@ -718,6 +718,7 @@
                 // This used to fail silently, which is how a broken sync
                 // could look "successful" while quietly never happening.
                 console.error('Cloud library fetch failed:', error.message);
+                showCloudSyncError(`Couldn't load your library from your account: ${error.message}`);
                 return;
             }
             if (!data) return;
@@ -894,13 +895,19 @@
             // This used to be silently swallowed, which is how a library
             // could look "synced" while cloud writes were actually failing
             // (bad schema, RLS denial, etc.) the whole time.
-            if (error) console.error('Cloud save failed for', item.id, error.message);
+            if (error) {
+                console.error('Cloud save failed for', item.id, error.message);
+                showCloudSyncError(`Couldn't sync "${item.title}" to your account: ${error.message}`);
+            }
         }
 
         async function deleteStateFromCloud(id) {
             if (!supabaseClient || !currentUser) return;
             const { error } = await supabaseClient.from('media_items').delete().eq('id', id).eq('user_id', currentUser.id);
-            if (error) console.error('Cloud delete failed for', id, error.message);
+            if (error) {
+                console.error('Cloud delete failed for', id, error.message);
+                showCloudSyncError(`Couldn't remove an item from your account: ${error.message}`);
+            }
         }
 
         // --- Cloud Storage for local uploads --------------------------------
@@ -925,6 +932,7 @@
             });
             if (error) {
                 console.error('Cloud audio upload failed for', item.id, error.message);
+                showCloudSyncError(`Couldn't upload "${item.title}" to your account: ${error.message}`);
                 return;
             }
             item.storagePath = path;
@@ -980,6 +988,21 @@
             const now = Date.now();
             if (now - lastQuotaAlertAt < 8000) return;
             lastQuotaAlertAt = now;
+            alert(message);
+        }
+
+        let lastCloudSyncAlertAt = 0;
+        // Cloud sync errors used to only reach console.error - invisible
+        // unless devtools happened to be open - which is how a library could
+        // sit at "Synced" in the header while every write to Supabase was
+        // actually failing (missing table, RLS denial, bad column, etc.).
+        // A long cooldown matters here specifically because saveStateToCloud
+        // runs from saveState(), which fires ~4x/second during playback -
+        // without one, a real failure would re-alert on every tick.
+        function showCloudSyncError(message) {
+            const now = Date.now();
+            if (now - lastCloudSyncAlertAt < 30000) return;
+            lastCloudSyncAlertAt = now;
             alert(message);
         }
 
