@@ -2455,25 +2455,47 @@
                 // The blob: URL above only works for this page session -
                 // persist the actual bytes so playback survives closing and
                 // reopening the app.
-                // Deliberately NOT chained: storing locally (IndexedDB, for
-                // offline playback on this device) and uploading to the
-                // cloud (Supabase Storage, for cross-device sync) are
-                // independent concerns. Chaining them used to mean a large
-                // file that failed to write to IndexedDB (browser storage
-                // quota, private browsing, WebKit's known large-blob issues)
-                // silently skipped the cloud upload too - never even
-                // attempted, so no cloud row and no error either.
-                storeLocalAudio(newItem.id, source)
-                    .catch(err => {
-                        console.error('Could not save local file for offline playback:', err);
-                        showCloudSyncError(`"${newItem.title}" couldn't be saved on this device for offline playback: ${err && err.message ? err.message : err}`);
-                    });
-                uploadLocalAudioToCloud(newItem, source)
-                    .then(() => { if (newItem.storagePath) saveStateToCloud(newItem); })
-                    .catch(err => {
-                        console.error('Cloud upload failed for', newItem.id, err);
-                        showCloudSyncError(`Couldn't upload "${newItem.title}" to your account: ${err && err.message ? err.message : err}`);
-                    });
+                //
+                // Start reading the file's real bytes into memory right now,
+                // in this same tick, rather than handing the original File
+                // object itself to storeLocalAudio/uploadLocalAudioToCloud
+                // to read later. A file picked from a location like iCloud
+                // Drive whose *containing folder* isn't fully downloaded can
+                // report as available and even play back fine immediately
+                // (that uses the blob: URL above, already backed by
+                // whatever bytes the browser had buffered at pick time) but
+                // then silently return an empty read later on, once
+                // whatever short-lived access window the OS granted has
+                // lapsed - which is exactly what an upload reached moments
+                // later, after IndexedDB/network setup, can run into.
+                // file.arrayBuffer() below is called synchronously here, so
+                // the read begins immediately instead of after a delay.
+                file.arrayBuffer().then(buffer => {
+                    if (buffer.byteLength === 0) {
+                        showCloudSyncError(`"${newItem.title}" read as empty. If it's stored in iCloud Drive, make sure the file (and its containing folder) is fully downloaded to this device, then try re-adding it.`);
+                        return;
+                    }
+                    const stableBlob = new Blob([buffer], { type: mime || 'application/octet-stream' });
+                    // Deliberately NOT chained: storing locally (IndexedDB,
+                    // for offline playback on this device) and uploading to
+                    // the cloud (Supabase Storage, for cross-device sync)
+                    // are independent concerns. Chaining them used to mean
+                    // a failure in one silently skipped the other entirely.
+                    storeLocalAudio(newItem.id, stableBlob)
+                        .catch(err => {
+                            console.error('Could not save local file for offline playback:', err);
+                            showCloudSyncError(`"${newItem.title}" couldn't be saved on this device for offline playback: ${err && err.message ? err.message : err}`);
+                        });
+                    uploadLocalAudioToCloud(newItem, stableBlob)
+                        .then(() => { if (newItem.storagePath) saveStateToCloud(newItem); })
+                        .catch(err => {
+                            console.error('Cloud upload failed for', newItem.id, err);
+                            showCloudSyncError(`Couldn't upload "${newItem.title}" to your account: ${err && err.message ? err.message : err}`);
+                        });
+                }).catch(err => {
+                    console.error('Could not read file', file.name, err);
+                    showCloudSyncError(`Couldn't read "${newItem.title}": ${err && err.message ? err.message : err}. If it's stored in iCloud Drive, make sure the file is fully downloaded to this device, then try again.`);
+                });
             });
             saveState();
             renderLibrary();
