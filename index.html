@@ -982,17 +982,29 @@
                 return false;
             }
 
-            localStorage.setItem('indybooks_items', JSON.stringify(appState.items));
-            localStorage.setItem('indybooks_folders', JSON.stringify(appState.folders));
-            localStorage.setItem('indybooks_folder_colors', JSON.stringify(appState.folderColors));
-            localStorage.setItem('indybooks_collapsed', JSON.stringify(appState.collapsedFolders));
-            localStorage.setItem('indybooks_queue', JSON.stringify(appState.queue));
-            localStorage.setItem('indybooks_start_trim', appState.startTrim);
-            localStorage.setItem('indybooks_end_trim', appState.endTrim);
-            if (appState.currentId) localStorage.setItem('indybooks_current_id', appState.currentId);
-            else localStorage.removeItem('indybooks_current_id');
-            if (appState.goodreadsUser) localStorage.setItem('indybooks_goodreads', appState.goodreadsUser);
-            else localStorage.removeItem('indybooks_goodreads');
+            try {
+                localStorage.setItem('indybooks_items', JSON.stringify(appState.items));
+                localStorage.setItem('indybooks_folders', JSON.stringify(appState.folders));
+                localStorage.setItem('indybooks_folder_colors', JSON.stringify(appState.folderColors));
+                localStorage.setItem('indybooks_collapsed', JSON.stringify(appState.collapsedFolders));
+                localStorage.setItem('indybooks_queue', JSON.stringify(appState.queue));
+                localStorage.setItem('indybooks_start_trim', appState.startTrim);
+                localStorage.setItem('indybooks_end_trim', appState.endTrim);
+                if (appState.currentId) localStorage.setItem('indybooks_current_id', appState.currentId);
+                else localStorage.removeItem('indybooks_current_id');
+                if (appState.goodreadsUser) localStorage.setItem('indybooks_goodreads', appState.goodreadsUser);
+                else localStorage.removeItem('indybooks_goodreads');
+            } catch (e) {
+                // A full localStorage (browser quota, ~5-10MB typically) used
+                // to throw here uncaught, aborting the function silently
+                // mid-write - cloud sync and the recovery snapshot below
+                // never ran, and whatever called saveState() never got to
+                // its own next line either (e.g. saveItemEdits() closing the
+                // modal). Surface it instead of failing invisibly.
+                console.error('saveState() could not write to localStorage:', e);
+                alert("Couldn't save - your browser's local storage is full. A large cover image is the most common cause; try a smaller one.");
+                return false;
+            }
 
             lastPersistedItemCount = appState.items.length;
 
@@ -1533,14 +1545,53 @@
             document.getElementById('bulk-edit-modal').classList.add('flex');
         }
 
+        // A phone photo picked directly (no resize) is routinely 4000px+ per
+        // side and several MB - turned into a base64 data: URI that's even
+        // bigger, that's multiple MB of TEXT being set as an <input>'s value
+        // (multi-second freeze on its own) and then, once saved onto the
+        // item, JSON.stringify'd and written to localStorage on every future
+        // saveState() call - including the ~4x/second ones during playback.
+        // A cover only ever needs to look good at a few hundred px, so
+        // downscale through a canvas before it ever reaches a form field.
+        function resizeImageToDataUrl(file, maxDim, quality) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onerror = () => reject(reader.error || new Error('Could not read the file'));
+                reader.onload = () => {
+                    const img = new Image();
+                    img.onerror = () => reject(new Error('Could not decode that image'));
+                    img.onload = () => {
+                        let { width, height } = img;
+                        if (width > maxDim || height > maxDim) {
+                            if (width > height) {
+                                height = Math.round(height * (maxDim / width));
+                                width = maxDim;
+                            } else {
+                                width = Math.round(width * (maxDim / height));
+                                height = maxDim;
+                            }
+                        }
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+                        resolve(canvas.toDataURL('image/jpeg', quality));
+                    };
+                    img.src = reader.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
         function handleBulkCoverUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                document.getElementById('bulk-cover-input').value = e.target.result;
-            };
-            reader.readAsDataURL(file);
+            resizeImageToDataUrl(file, 500, 0.82)
+                .then(dataUrl => { document.getElementById('bulk-cover-input').value = dataUrl; })
+                .catch(err => {
+                    console.error('Cover image processing failed:', err);
+                    alert("Couldn't process that image. Please try a different file.");
+                });
         }
 
         function saveBulkEdits() {
@@ -2617,11 +2668,12 @@
         function handleCoverImageUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                document.getElementById('edit-cover-input').value = e.target.result;
-            };
-            reader.readAsDataURL(file);
+            resizeImageToDataUrl(file, 500, 0.82)
+                .then(dataUrl => { document.getElementById('edit-cover-input').value = dataUrl; })
+                .catch(err => {
+                    console.error('Cover image processing failed:', err);
+                    alert("Couldn't process that image. Please try a different file.");
+                });
         }
 
         function closeModals() {
