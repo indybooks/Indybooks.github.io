@@ -279,7 +279,7 @@
 
             <div class="flex items-center justify-center space-x-6 w-full max-w-md">
                 <button onclick="toggleSlothMode()" id="modal-sloth-btn" class="flex flex-col items-center text-xs text-[#FFDDA6] hover:text-white transition cursor-pointer">
-                    <div class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center mb-1 overflow-hidden">
+                    <div id="modal-sloth-icon-circle" class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center mb-1 overflow-hidden transition">
                         <img src="sloth-icon.png" alt="Sloth Mode" class="w-9 h-9 object-contain">
                     </div>
                     Sloth Mode
@@ -2141,6 +2141,26 @@
             }
         }
 
+        // setupMediaSession() above only ever ran once, at the moment a
+        // track first loaded - so the lock screen's Now Playing artwork was
+        // never re-affirmed on a later resume. iOS in particular can drop
+        // it after the app is backgrounded or the audio element has sat
+        // paused for a while, and nothing re-attached it afterward. Native
+        // play/pause events fire for every path that actually starts or
+        // stops audio (togglePlayPause, the sleep timer, deleting the
+        // playing item, media-key/lock-screen controls) so refreshing here,
+        // in one place, covers all of them rather than patching each call
+        // site that pauses/plays the element.
+        audioEl.addEventListener('play', () => {
+            if (!('mediaSession' in navigator)) return;
+            navigator.mediaSession.playbackState = 'playing';
+            const item = appState.items.find(i => i.id === appState.currentId);
+            if (item) setupMediaSession(item);
+        });
+        audioEl.addEventListener('pause', () => {
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+        });
+
         // Shared by deleteItem() and bulkDeleteSelectedItems(): removes an
         // item's playback state, local-file storage, and queue references,
         // but leaves confirmation/persistence/re-render to the caller so a
@@ -2415,16 +2435,25 @@
             appState.slothMode = !appState.slothMode;
             const btn = document.getElementById('sloth-mode-btn');
             const modalBtn = document.getElementById('modal-sloth-btn');
-            
+            // The modal button's own classList only covers the text label
+            // below the icon - toggling text-color/scale there is barely
+            // visible against the icon itself, which is what testing
+            // flagged as not clearly showing an active state in full
+            // screen. Apply the same ring/background treatment the mini
+            // player's button already gets, but to the icon's own circle.
+            const modalIconCircle = document.getElementById('modal-sloth-icon-circle');
+
             if (appState.slothMode) {
                 audioEl.playbackRate = 0.5;
                 btn.classList.add('bg-white/35', 'ring-2', 'ring-[#FF7BAC]');
                 if (modalBtn) modalBtn.classList.add('text-[#FF7BAC]', 'scale-105');
+                if (modalIconCircle) modalIconCircle.classList.add('bg-[#FF7BAC]/40', 'ring-2', 'ring-[#FF7BAC]');
             } else {
                 const currentItem = appState.items.find(i => i.id === appState.currentId);
                 audioEl.playbackRate = currentItem ? (currentItem.speed || 1.0) : 1.0;
                 btn.classList.remove('bg-white/35', 'ring-2', 'ring-[#FF7BAC]');
                 if (modalBtn) modalBtn.classList.remove('text-[#FF7BAC]', 'scale-105');
+                if (modalIconCircle) modalIconCircle.classList.remove('bg-[#FF7BAC]/40', 'ring-2', 'ring-[#FF7BAC]');
             }
             updatePlayerUI();
         }
