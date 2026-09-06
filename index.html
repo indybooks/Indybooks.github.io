@@ -1048,6 +1048,7 @@
                 }
                 item.storagePath = path;
                 saveState();
+                evictStaleLocalAudioCache();
                 return;
             }
 
@@ -1088,6 +1089,7 @@
                     onSuccess: () => {
                         item.storagePath = path;
                         saveState();
+                        evictStaleLocalAudioCache();
                         resolve();
                     },
                 });
@@ -1334,6 +1336,12 @@
             // would get an unnecessary "restore from backup?" prompt in the
             // couple hundred ms before its own data arrives.
             setTimeout(checkForLibraryWipe, 2000);
+
+            // Same delay/reasoning as checkForLibraryWipe above - give a
+            // signed-in device's auto-sync a moment to finish first, since
+            // eviction needs to know currentUser/storagePath state is
+            // actually settled before deciding what's safe to drop.
+            setTimeout(evictStaleLocalAudioCache, 3000);
         };
 
         function registerServiceWorker() {
@@ -2030,6 +2038,11 @@
             if (!item) return;
 
             appState.currentId = id;
+            // Drives evictStaleLocalAudioCache()'s LRU ordering - which
+            // cached local copies are safe to drop first when a cloud-
+            // backed library is using more on-device storage than the
+            // budget allows.
+            item.lastPlayedAt = Date.now();
 
             if (item.subTracks && item.subTracks.length > 0) {
                 let idx = item.currentSubTrackIndex;
@@ -2579,6 +2592,81 @@
                 });
             } catch (e) {
                 console.warn('Could not delete local audio from IndexedDB:', e);
+            }
+        }
+
+        // --- Local audio cache eviction --------------------------------------
+        // Every local upload's bytes live in IndexedDB *and* (once synced)
+        // Supabase Storage - permanently, with no cap, which is how a large
+        // library turns into gigabytes of "System Data" on iOS. Once a copy
+        // is safely in the cloud, the on-device copy is just a cache: this
+        // trims the least-recently-played ones once total local audio
+        // storage passes a budget. resolveLocalOrCloudUrl() already
+        // re-downloads and re-caches a cloud-backed item on its next play if
+        // IndexedDB doesn't have it, so nothing is lost - just re-fetched on
+        // demand, the same way a streamed URL item always has been.
+        let LOCAL_AUDIO_CACHE_BUDGET_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
+
+        // Returns a Map of id -> byte size for every audio blob actually
+        // sitting in IndexedDB right now.
+        async function getLocalAudioCacheSizes() {
+            const db = await openLocalDb();
+            return new Promise((resolve, reject) => {
+                const sizes = new Map();
+                const tx = db.transaction(LOCAL_DB_STORE, 'readonly');
+                const req = tx.objectStore(LOCAL_DB_STORE).openCursor();
+                req.onsuccess = e => {
+                    const cursor = e.target.result;
+                    if (cursor) {
+                        sizes.set(cursor.key, (cursor.value && cursor.value.size) || 0);
+                        cursor.continue();
+                    } else {
+                        resolve(sizes);
+                    }
+                };
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        async function evictStaleLocalAudioCache() {
+            // Without a signed-in account there's no cloud copy to fall
+            // back to for anything - evicting would just be data loss.
+            if (!supabaseClient || !currentUser) return;
+
+            let sizes;
+            try {
+                sizes = await getLocalAudioCacheSizes();
+            } catch (e) {
+                console.warn('Could not inspect local audio cache for eviction:', e);
+                return;
+            }
+            const totalBytes = Array.from(sizes.values()).reduce((sum, s) => sum + s, 0);
+            if (totalBytes <= LOCAL_AUDIO_CACHE_BUDGET_BYTES) return;
+
+            // Eligible: actually cached right now, has a cloud copy to
+            // re-download from later, and isn't the item currently playing
+            // (evicting mid-playback would cut the active track off).
+            const evictable = appState.items
+                .filter(i => i.storagePath && sizes.has(i.id) && i.id !== appState.currentId)
+                .sort((a, b) => (a.lastPlayedAt || 0) - (b.lastPlayedAt || 0));
+
+            let bytesOver = totalBytes - LOCAL_AUDIO_CACHE_BUDGET_BYTES;
+            let evictedCount = 0, freedBytes = 0;
+            for (const item of evictable) {
+                if (bytesOver <= 0) break;
+                const size = sizes.get(item.id) || 0;
+                try {
+                    await deleteLocalAudio(item.id);
+                } catch (e) {
+                    console.warn('Could not evict cached audio for', item.id, e);
+                    continue;
+                }
+                bytesOver -= size;
+                freedBytes += size;
+                evictedCount++;
+            }
+            if (evictedCount > 0) {
+                console.log(`Freed ${(freedBytes / 1e6).toFixed(0)}MB of on-device storage by evicting ${evictedCount} least-recently-played local audio file(s) that are safely backed up in your account. They'll re-download automatically the next time you play them.`);
             }
         }
 
