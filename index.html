@@ -577,6 +577,21 @@
         </div>
     </div>
 
+    <!-- Manage Storage Modal -->
+    <div id="manage-storage-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center">
+                <h3 class="text-lg font-bold text-[#1B3F57]">Manage Storage</h3>
+                <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div id="storage-summary" class="text-xs text-gray-600 bg-gray-50 rounded-xl p-3 space-y-1"></div>
+            <div id="storage-item-list" class="flex-1 overflow-y-auto space-y-1 divide-y divide-gray-100"></div>
+            <div class="flex justify-end pt-2 border-t border-gray-100">
+                <button id="free-up-space-btn" onclick="freeUpAllEligibleSpace()" class="px-4 py-2 text-xs font-semibold bg-[#3F8CB8] text-white rounded-xl shadow hover:bg-[#1B3F57] cursor-pointer">Free Up Eligible Space Now</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Settings Modal -->
     <div id="settings-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
         <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
@@ -606,6 +621,10 @@
                     Import JSON
                     <input type="file" id="restore-backup-file" accept="application/json,.json" class="hidden" onchange="importLibraryBackup(event)">
                 </label>
+            </div>
+            <div class="pt-2 border-t border-gray-100 flex justify-between items-center">
+                <span class="text-xs text-gray-600 font-medium">Local Storage Usage</span>
+                <button onclick="openManageStorageModal()" class="px-4 py-2 bg-gray-100 text-[#1B3F57] hover:bg-gray-200 rounded-xl text-xs font-semibold cursor-pointer">Manage Storage</button>
             </div>
             <div id="backup-recovery-note" class="hidden pt-2 border-t border-gray-100 text-xs bg-[#FFDDA6]/40 text-[#1B3F57] rounded-xl p-3"></div>
             <div class="flex justify-end pt-2">
@@ -2668,6 +2687,133 @@
             if (evictedCount > 0) {
                 console.log(`Freed ${(freedBytes / 1e6).toFixed(0)}MB of on-device storage by evicting ${evictedCount} least-recently-played local audio file(s) that are safely backed up in your account. They'll re-download automatically the next time you play them.`);
             }
+        }
+
+        function formatBytes(bytes) {
+            if (!bytes) return '0 MB';
+            const mb = bytes / (1024 * 1024);
+            return mb < 1000 ? `${mb.toFixed(1)} MB` : `${(mb / 1024).toFixed(2)} GB`;
+        }
+
+        async function openManageStorageModal() {
+            closeModals();
+            const modal = document.getElementById('manage-storage-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            await renderStorageManagementView();
+        }
+
+        async function renderStorageManagementView() {
+            const summaryEl = document.getElementById('storage-summary');
+            const listEl = document.getElementById('storage-item-list');
+            summaryEl.innerHTML = '<p class="text-center py-2">Loading storage usage...</p>';
+            listEl.innerHTML = '';
+
+            let sizes;
+            try {
+                sizes = await getLocalAudioCacheSizes();
+            } catch (e) {
+                summaryEl.innerHTML = `<p class="text-red-600">Couldn't read local storage: ${e.message}</p>`;
+                return;
+            }
+
+            const totalBytes = Array.from(sizes.values()).reduce((sum, s) => sum + s, 0);
+            const cachedItems = appState.items.filter(i => sizes.has(i.id));
+            const evictableItems = cachedItems.filter(i => i.storagePath && i.id !== appState.currentId);
+            const evictableBytes = evictableItems.reduce((sum, i) => sum + (sizes.get(i.id) || 0), 0);
+
+            let quotaLine = '';
+            if (navigator.storage && navigator.storage.estimate) {
+                try {
+                    const est = await navigator.storage.estimate();
+                    if (est && est.quota) {
+                        quotaLine = `<p>Browser storage overall: ${formatBytes(est.usage)} used of ${formatBytes(est.quota)} available.</p>`;
+                    }
+                } catch (e) { /* not critical - just skip this line */ }
+            }
+
+            summaryEl.innerHTML = `
+                <p class="font-bold text-[#1B3F57]">${formatBytes(totalBytes)} of local audio cached on this device</p>
+                <p>Automatic cleanup budget: ${formatBytes(LOCAL_AUDIO_CACHE_BUDGET_BYTES)}.</p>
+                ${quotaLine}
+                <p>${evictableItems.length > 0
+                    ? `${formatBytes(evictableBytes)} across ${evictableItems.length} item${evictableItems.length > 1 ? 's' : ''} can be freed right now - they're already backed up to your account and will re-download automatically the next time you play them.`
+                    : "Nothing can be freed right now - either nothing is cached, or the remaining items aren't backed up to your account yet."}</p>
+            `;
+
+            if (cachedItems.length === 0) {
+                listEl.innerHTML = '<p class="text-center text-xs text-gray-400 py-6">No audio files are currently cached on this device.</p>';
+                return;
+            }
+
+            listEl.innerHTML = cachedItems
+                .sort((a, b) => (a.lastPlayedAt || 0) - (b.lastPlayedAt || 0))
+                .map(item => {
+                    const size = sizes.get(item.id) || 0;
+                    const isCurrent = item.id === appState.currentId;
+                    const canFree = !!item.storagePath && !isCurrent;
+                    const statusNote = isCurrent ? 'Currently playing' : (item.storagePath ? 'Backed up - safe to free' : 'Not backed up - only copy');
+                    return `
+                        <div class="py-2 flex items-center justify-between gap-2">
+                            <div class="min-w-0">
+                                <p class="text-xs font-semibold text-[#1B3F57] truncate">${item.title}</p>
+                                <p class="text-[11px] text-gray-500">${formatBytes(size)} &middot; ${statusNote}</p>
+                            </div>
+                            ${canFree
+                                ? `<button onclick="evictItemCache('${item.id}')" class="shrink-0 px-3 py-1.5 bg-gray-100 text-[#1B3F57] hover:bg-gray-200 rounded-lg text-[11px] font-semibold cursor-pointer">Free Up</button>`
+                                : `<span class="shrink-0 text-[10.5px] text-gray-400 italic px-1">${isCurrent ? 'In use' : 'Local only'}</span>`}
+                        </div>
+                    `;
+                }).join('');
+        }
+
+        async function evictItemCache(itemId) {
+            const item = appState.items.find(i => i.id === itemId);
+            if (!item) return;
+            if (!item.storagePath) {
+                alert("This item isn't backed up to your account yet, so its local copy can't be freed without losing it. Upload it first (Retry Cloud Sync in Settings), then try again.");
+                return;
+            }
+            if (item.id === appState.currentId) {
+                alert("Can't free up the item that's currently playing.");
+                return;
+            }
+            if (!confirm(`Free up the local copy of "${item.title}"? It's already backed up to your account and will re-download automatically the next time you play it.`)) return;
+            await deleteLocalAudio(itemId);
+            await renderStorageManagementView();
+        }
+
+        async function freeUpAllEligibleSpace() {
+            let sizes;
+            try {
+                sizes = await getLocalAudioCacheSizes();
+            } catch (e) {
+                alert("Couldn't read local storage: " + e.message);
+                return;
+            }
+            const evictable = appState.items.filter(i => i.storagePath && sizes.has(i.id) && i.id !== appState.currentId);
+            if (evictable.length === 0) {
+                alert('Nothing eligible to free up right now.');
+                return;
+            }
+            const freeableBytes = evictable.reduce((sum, i) => sum + (sizes.get(i.id) || 0), 0);
+            if (!confirm(`Free up ${formatBytes(freeableBytes)} across ${evictable.length} item(s)? They're all backed up to your account and will re-download automatically the next time you play them.`)) return;
+
+            const btn = document.getElementById('free-up-space-btn');
+            const originalLabel = btn ? btn.innerText : '';
+            if (btn) { btn.disabled = true; btn.innerText = 'Freeing up space...'; }
+
+            for (const item of evictable) {
+                try {
+                    await deleteLocalAudio(item.id);
+                } catch (e) {
+                    console.warn('Could not evict cached audio for', item.id, e);
+                }
+            }
+
+            if (btn) { btn.disabled = false; btn.innerText = originalLabel; }
+            await renderStorageManagementView();
+            alert(`Freed up ${formatBytes(freeableBytes)} across ${evictable.length} item(s).`);
         }
 
         function handleLocalFiles(event) {
