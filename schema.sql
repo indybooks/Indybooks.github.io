@@ -167,11 +167,20 @@ create policy folders_delete on public.folders
 -- Private bucket. Object keys are '<user_id>/<item_id>', and the policies
 -- below compare the first path segment to auth.uid(), so one user can never
 -- read or overwrite another's file. Playback uses short-lived signed URLs.
+--
+-- file_size_limit below is capped at 50MB (52428800 bytes) to match this
+-- project's Settings -> Storage -> "Upload file size limit", a separate
+-- PROJECT-level global cap that isn't raisable on every plan tier and
+-- overrides this bucket-level one whenever it's lower. If your project's
+-- global limit is raised (or is already higher on your plan), raise both
+-- this value AND CLOUD_MAX_UPLOAD_BYTES in index.html to match - otherwise
+-- a file under the bucket's own limit still gets rejected server-side with
+-- an opaque 413 "Maximum size exceeded".
 -- =========================================================================
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
-  'audio', 'audio', false, 209715200,
+  'audio', 'audio', false, 52428800,
   array['audio/mpeg','audio/mp4','audio/aac','audio/m4a','audio/x-m4b','audio/m4b',
         'audio/wav','audio/ogg','audio/opus','audio/flac','audio/webm']
 )

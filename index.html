@@ -653,7 +653,15 @@
         // Must match the bucket name and file_size_limit schema.sql configures
         // (section 5, "Storage — uploaded audio").
         const AUDIO_BUCKET = 'audio';
-        const CLOUD_MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
+        // Supabase enforces a PROJECT-level global upload limit in addition
+        // to the per-bucket file_size_limit above - whichever is lower
+        // wins, and the project-level one isn't raisable on every plan
+        // tier. This must match whatever that project's dashboard
+        // (Settings -> Storage -> "Upload file size limit") actually
+        // allows, or a file under our own cap still gets rejected server-
+        // side with an opaque 413 "Maximum size exceeded" instead of the
+        // clear message below.
+        const CLOUD_MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
         let supabaseClient = null;
         let currentUser = null;
 
@@ -1044,7 +1052,12 @@
         async function uploadLocalAudioToCloud(item, blob) {
             if (!supabaseClient || !currentUser) return;
             if (blob.size > CLOUD_MAX_UPLOAD_BYTES) {
-                const msg = `"${item.title}" is ${(blob.size / 1e6).toFixed(0)}MB, over the ${(CLOUD_MAX_UPLOAD_BYTES / 1e6).toFixed(0)}MB cross-device sync limit, so it wasn't uploaded to your account. It will keep playing on this device only.`;
+                // 1024*1024, not 1e6: the limit is expressed in real MiB
+                // (50 * 1024 * 1024), so dividing by the decimal-MB
+                // definition understated it (e.g. showed "52MB" for a
+                // 50MB cap) - confusing when directly comparing this
+                // message against Supabase's own "50MB" dashboard label.
+                const msg = `"${item.title}" is ${(blob.size / (1024 * 1024)).toFixed(0)}MB, over the ${(CLOUD_MAX_UPLOAD_BYTES / (1024 * 1024)).toFixed(0)}MB cross-device sync limit, so it wasn't uploaded to your account. It will keep playing on this device only.`;
                 console.warn(msg);
                 showCloudSyncError(msg);
                 return;
