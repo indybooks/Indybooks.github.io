@@ -2386,6 +2386,21 @@
             return currentItem;
         }
 
+        // timeupdate fires roughly 4x/second during playback. saveState()
+        // re-serializes and writes the ENTIRE items array to localStorage on
+        // every call - including every item's base64 cover image, not just
+        // the currently-playing one's position - which for a library with
+        // several dozen covers is a genuinely expensive, main-thread-
+        // blocking write. Doing that 4 times a second was real, measurable
+        // playback-time jank (visible stutter/freezing), not just during
+        // this tick but starving whatever the user was trying to do at the
+        // same time (typing, tapping Save). Persisting the exact position
+        // doesn't need that granularity - flushPlaybackProgress() already
+        // covers the moments that actually matter (pause, backgrounding,
+        // teardown) with an immediate, unthrottled save.
+        let lastPeriodicPlaybackSaveAt = 0;
+        const PLAYBACK_SAVE_INTERVAL_MS = 5000;
+
         function onAudioTimeUpdate() {
             const currentItem = syncCurrentPlaybackTime();
             if (!currentItem) return;
@@ -2404,8 +2419,12 @@
                 return;
             }
 
-            saveState();
-            syncPlaybackProgress(currentItem.id, currentItem.currentTime);
+            const now = Date.now();
+            if (now - lastPeriodicPlaybackSaveAt >= PLAYBACK_SAVE_INTERVAL_MS) {
+                lastPeriodicPlaybackSaveAt = now;
+                saveState();
+                syncPlaybackProgress(currentItem.id, currentItem.currentTime);
+            }
             updatePlayerProgressUI();
         }
 
