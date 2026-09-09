@@ -1082,42 +1082,80 @@
             if (!accessToken) return;
 
             await new Promise(resolve => {
-                const upload = new tus.Upload(blob, {
-                    endpoint: `${SUPABASE_URL}/storage/v1/upload/resumable`,
-                    retryDelays: [0, 3000, 5000, 10000, 20000],
-                    headers: {
-                        authorization: `Bearer ${accessToken}`,
-                        'x-upsert': 'true',
-                    },
-                    uploadDataDuringCreation: true,
-                    removeFingerprintOnSuccess: true,
-                    metadata: {
-                        bucketName: AUDIO_BUCKET,
-                        objectName: path,
-                        contentType: blob.type || 'application/octet-stream',
-                        cacheControl: '3600',
-                    },
-                    // Must be a multiple of 256KiB; 6MB balances request
-                    // count against how much of a dropped chunk gets redone.
-                    chunkSize: 6 * 1024 * 1024,
-                    onError: err => {
-                        console.error('Cloud audio upload failed for', item.id, err);
-                        showCloudSyncError(`Couldn't upload "${item.title}" to your account: ${err && err.message ? err.message : err}`);
-                        resolve();
-                    },
-                    onSuccess: () => {
-                        item.storagePath = path;
-                        saveState();
-                        evictStaleLocalAudioCache();
-                        resolve();
-                    },
-                });
-                upload.findPreviousUploads()
-                    .then(previousUploads => {
-                        if (previousUploads.length > 0) upload.resumeFromPreviousUpload(previousUploads[0]);
-                        upload.start();
-                    })
-                    .catch(() => upload.start());
+                // A large file over a slow connection can take long enough
+                // that the access token baked into the upload's headers
+                // expires mid-transfer ("exp claim timestamp check failed").
+                // tus-js-client's own retry logic just resends the SAME
+                // stale header, so every retry after that fails identically
+                // - refresh the session and start a fresh Upload instance
+                // once on that specific error. TUS tracks progress
+                // server-side keyed by this upload's fingerprint, so
+                // findPreviousUploads()/resumeFromPreviousUpload() picks up
+                // where it left off rather than restarting from zero.
+                let authRetried = false;
+                function startUpload(token) {
+                    const upload = new tus.Upload(blob, {
+                        endpoint: `${SUPABASE_URL}/storage/v1/upload/resumable`,
+                        retryDelays: [0, 3000, 5000, 10000, 20000],
+                        headers: {
+                            authorization: `Bearer ${token}`,
+                            'x-upsert': 'true',
+                        },
+                        uploadDataDuringCreation: true,
+                        removeFingerprintOnSuccess: true,
+                        metadata: {
+                            bucketName: AUDIO_BUCKET,
+                            objectName: path,
+                            contentType: blob.type || 'application/octet-stream',
+                            cacheControl: '3600',
+                        },
+                        // Must be a multiple of 256KiB; 6MB balances request
+                        // count against how much of a dropped chunk gets redone.
+                        chunkSize: 6 * 1024 * 1024,
+                        onError: async err => {
+                            const msg = err && err.message ? err.message : String(err);
+                            // The real error text has backslash-escaped
+                            // quotes (it's a JSON blob embedded inside the
+                            // outer message), so a literal '"exp"' check
+                            // never matches - and every tus error already
+                            // contains "unexpected response", which itself
+                            // contains "exp" as a substring, so a loose
+                            // check on just "exp" would false-positive on
+                            // every failure. This exact phrase is specific
+                            // and survives the escaping either way.
+                            const isExpiredToken = msg.includes('claim timestamp check failed');
+                            if (isExpiredToken && !authRetried) {
+                                authRetried = true;
+                                try {
+                                    const { data: refreshed } = await supabaseClient.auth.refreshSession();
+                                    const freshToken = refreshed && refreshed.session ? refreshed.session.access_token : null;
+                                    if (freshToken) {
+                                        startUpload(freshToken);
+                                        return;
+                                    }
+                                } catch (refreshErr) {
+                                    console.error('Could not refresh session to resume upload for', item.id, refreshErr);
+                                }
+                            }
+                            console.error('Cloud audio upload failed for', item.id, err);
+                            showCloudSyncError(`Couldn't upload "${item.title}" to your account: ${msg}`);
+                            resolve();
+                        },
+                        onSuccess: () => {
+                            item.storagePath = path;
+                            saveState();
+                            evictStaleLocalAudioCache();
+                            resolve();
+                        },
+                    });
+                    upload.findPreviousUploads()
+                        .then(previousUploads => {
+                            if (previousUploads.length > 0) upload.resumeFromPreviousUpload(previousUploads[0]);
+                            upload.start();
+                        })
+                        .catch(() => upload.start());
+                }
+                startUpload(accessToken);
             });
         }
 
