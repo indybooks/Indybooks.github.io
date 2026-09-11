@@ -376,10 +376,15 @@
                     <label class="block text-xs font-semibold text-gray-600 mb-1">User Sign In / Sign Up</label>
                     <input type="email" id="auth-email-input" placeholder="you@example.com" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2">
                     <input type="password" id="auth-pass-input" placeholder="Password" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-3">
+                    <label class="flex items-center gap-2 mb-3 text-xs text-gray-600 cursor-pointer select-none">
+                        <input type="checkbox" id="remember-me-checkbox" checked class="w-4 h-4 accent-[#3F8CB8] rounded cursor-pointer">
+                        Remember Me on this device
+                    </label>
                     <div class="flex gap-2">
                         <button onclick="supabaseSignIn()" class="flex-1 py-2 bg-[#1B3F57] text-white rounded-xl text-xs font-semibold cursor-pointer">Sign In</button>
                         <button onclick="supabaseSignUp()" class="flex-1 py-2 bg-gray-100 text-[#1B3F57] hover:bg-gray-200 rounded-xl text-xs font-semibold cursor-pointer">Sign Up</button>
                     </div>
+                    <p class="text-[10.5px] text-gray-400 mt-1">Unchecked, you'll need to sign in again next time you fully close the app - safer on a shared or public device.</p>
                 </div>
             </div>
             <div id="auth-logged-view" class="space-y-3 hidden">
@@ -662,6 +667,46 @@
         // side with an opaque 413 "Maximum size exceeded" instead of the
         // clear message below.
         const CLOUD_MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+        // "Remember Me": Supabase already persists a session by default
+        // (localStorage, survives a full quit/relaunch) with no way to opt
+        // out - every account stayed signed in indefinitely, which is fine
+        // on a personal device but not on a shared/public one. This key
+        // holds the user's own choice; REMEMBER_ME_KEY itself always lives
+        // in localStorage (it has to survive to be read on the next
+        // launch, before there's even a session to restore), independent
+        // of where the session it controls ends up.
+        const REMEMBER_ME_KEY = 'indybooks_remember_me';
+        function getRememberMePreference() {
+            // Default true: matches this app's original always-on
+            // behavior, so nobody already signed in gets silently logged
+            // out just because this feature now exists.
+            const stored = localStorage.getItem(REMEMBER_ME_KEY);
+            return stored === null ? true : stored === 'true';
+        }
+        function setRememberMePreference(remember) {
+            localStorage.setItem(REMEMBER_ME_KEY, remember ? 'true' : 'false');
+        }
+        // Supabase reads/writes the actual session through this adapter.
+        // Remembered -> localStorage, surviving a full quit and relaunch
+        // (today's default). Not remembered -> sessionStorage, cleared the
+        // moment the browser/tab fully closes, so the next person on a
+        // shared device isn't still signed in. Checked fresh on every call
+        // (not just once at client creation) so flipping the checkbox and
+        // signing in immediately routes to the right place.
+        const authStorageAdapter = {
+            getItem: key => (getRememberMePreference() ? window.localStorage : window.sessionStorage).getItem(key),
+            setItem: (key, value) => (getRememberMePreference() ? window.localStorage : window.sessionStorage).setItem(key, value),
+            removeItem: key => (getRememberMePreference() ? window.localStorage : window.sessionStorage).removeItem(key),
+        };
+        // Both places that create the Supabase client route through here so
+        // the Remember Me storage adapter can't drift out of sync between them.
+        function createIndyBooksSupabaseClient() {
+            return window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+                auth: { storage: authStorageAdapter, persistSession: true, autoRefreshToken: true },
+            });
+        }
+
         let supabaseClient = null;
         let currentUser = null;
 
@@ -718,7 +763,7 @@
         // Initialize Supabase Client
         try {
             if (window.supabase) {
-                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                supabaseClient = createIndyBooksSupabaseClient();
                 checkSupabaseSession();
             }
         } catch (e) {
@@ -860,7 +905,7 @@
 
         function saveSupabaseConfig() {
             if (window.supabase) {
-                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                supabaseClient = createIndyBooksSupabaseClient();
             }
             closeModals();
             alert('Supabase connected successfully!');
@@ -870,6 +915,10 @@
             if (!supabaseClient) return;
             const email = document.getElementById('auth-email-input').value.trim();
             const password = document.getElementById('auth-pass-input').value.trim();
+            // Must be set before signUp() actually writes the session -
+            // authStorageAdapter checks this preference on every call, so
+            // this decides where that write lands.
+            setRememberMePreference(document.getElementById('remember-me-checkbox').checked);
             const { error } = await supabaseClient.auth.signUp({ email, password });
             if (error) alert(error.message);
             else alert('Check your email for confirmation link.');
@@ -879,6 +928,8 @@
             if (!supabaseClient) return;
             const email = document.getElementById('auth-email-input').value.trim();
             const password = document.getElementById('auth-pass-input').value.trim();
+            // Same reasoning as supabaseSignUp() above.
+            setRememberMePreference(document.getElementById('remember-me-checkbox').checked);
             const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
             if (error) alert(error.message);
             else {
@@ -3329,6 +3380,7 @@
             // those are deliberately left alone.
             document.getElementById('auth-email-input').value = '';
             document.getElementById('auth-pass-input').value = '';
+            document.getElementById('remember-me-checkbox').checked = getRememberMePreference();
             document.getElementById('auth-modal').classList.remove('hidden');
             document.getElementById('auth-modal').classList.add('flex');
         }
