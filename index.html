@@ -462,7 +462,7 @@
                 <input type="text" id="direct-title-input" placeholder="e.g., The Hobbit Chapter 1" class="autocap w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#3F8CB8] mb-3" onblur="this.value = toTitleCase(this.value)">
                 
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Direct Audio Link (Server / URL)</label>
-                <input type="url" id="direct-url-input" placeholder="https://myserver.com/audio/chapter1.m4b" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#3F8CB8] mb-3">
+                <input type="url" id="direct-url-input" placeholder="https://myserver.com/audio/chapter1.m4b" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#3F8CB8] mb-3" onblur="autoFillTitleAuthorFromUrl(this.value)">
 
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Cover Image (URL or Paste)</label>
                 <input type="url" id="direct-cover-input" placeholder="https://myserver.com/cover.jpg" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#3F8CB8] mb-3">
@@ -2572,6 +2572,103 @@
             return map[ext] || '';
         }
 
+        // Guesses title/author from a filename using the conventions
+        // actually seen across this library plus the handful of formats
+        // that cover most real-world audiobook/podcast rips:
+        //   "HT_01-16 - Sara Paretsky - Hard Time"   (track code - Author - Title)
+        //   "Isaac Asimov - The Caves of Steel"       (Author - Title)
+        //   "The Caves of Steel - Isaac Asimov"       (Title - Author)
+        //   "Isaac Asimov_The Caves Of Steel"         (underscored)
+        //   "The Caves of Steel (Isaac Asimov)"       (title, author in parens)
+        //   "01 The Hobbit"                           (leading track number, no author)
+        // It's a best-effort guess, not a parser with ground truth to check
+        // against - every result lands in an editable field rather than
+        // being applied silently, and anything it can't confidently split
+        // just becomes the (cleaned-up) title with author left blank.
+        function parseAudioFilenameForTitleAuthor(rawName) {
+            let name = rawName.replace(/\.[^/.]+$/, '').trim();
+
+            // Strip a leading track/chapter marker - never part of the title:
+            // "01 - ", "01_", "Track 3 - ", "Chapter 12: ", "[03] ", "#3 ".
+            name = name.replace(/^\s*(?:track|chapter|ch)?[\s.]*#?\[?\d{1,3}\]?[\s._:-]+/i, '').trim();
+
+            // A lone underscore-separated filename ("Author_Title") reads
+            // as one run-on word once split on " - " below, so normalize
+            // underscores to spaces first - but only when the name has no
+            // real spaces at all, so "already spaced - with_an - underscore"
+            // filenames aren't mangled.
+            if (!name.includes(' ') && name.includes('_')) {
+                name = name.replace(/_/g, ' ');
+            }
+            name = name.replace(/\s+/g, ' ').trim();
+
+            const stopwords = new Set(['the', 'a', 'an', 'of', 'and', 'or']);
+            const startsLikeTitle = (s) => stopwords.has(s.trim().split(/\s+/)[0].toLowerCase());
+
+            // Shape-only checks (capitalized, short, no digits) can't
+            // actually tell a title from a name - "War Of The Worlds"
+            // passes all of them. The real tell is words that essentially
+            // never appear in a person's name: function words in the
+            // middle ("of", "the", "and"...), digits (years), or an
+            // ALL-CAPS word (acronyms/labels like "USA", "BBC"). A segment
+            // that trips any of these is almost certainly part of a title
+            // or description, not an author - so it's excluded from ever
+            // being guessed as one, rather than picked by default.
+            const nonNameWords = new Set(['the', 'of', 'and', 'or', 'in', 'on', 'at', 'to', 'with', 'from']);
+            const plausibleAuthor = (s) => {
+                const words = s.trim().split(/\s+/).filter(Boolean);
+                if (words.length < 1 || words.length > 4) return false;
+                if (/\d/.test(s)) return false;
+                // A contiguous run of 2+ uppercase letters flags an
+                // acronym/label like "USA" or "BBC" - but initials like
+                // "J.R.R." are ALSO all-uppercase once periods are folded
+                // in, and those are clearly part of a real name, so periods
+                // must break the run rather than being ignored by it.
+                if (words.some(w => /^[A-Z]{2,}$/.test(w))) return false;
+                if (words.some(w => nonNameWords.has(w.toLowerCase()))) return false;
+                return true;
+            };
+
+            // "<code/track> - <Author> - <Title>": the exact shape of this
+            // library's own multi-part filenames.
+            const dashParts = name.split(/\s+[-–—]\s+/).map(s => s.trim()).filter(Boolean);
+            if (dashParts.length >= 3 && plausibleAuthor(dashParts[1])) {
+                return { title: dashParts.slice(2).join(' - '), author: dashParts[1] };
+            }
+
+            if (dashParts.length === 2) {
+                const [first, second] = dashParts;
+                const firstPlausible = plausibleAuthor(first);
+                const secondPlausible = plausibleAuthor(second);
+
+                if (firstPlausible && !secondPlausible) return { title: second, author: first };
+                if (secondPlausible && !firstPlausible) return { title: first, author: second };
+                if (firstPlausible && secondPlausible) {
+                    // Both are name-shaped - a segment starting with an
+                    // article ("The", "A", "An") is a strong tell it's
+                    // actually the title, not a name.
+                    if (startsLikeTitle(first)) return { title: first, author: second };
+                    if (startsLikeTitle(second)) return { title: second, author: first };
+                    // Truly ambiguous - default to the single most common
+                    // convention for ripped audiobooks/podcasts.
+                    return { title: second, author: first };
+                }
+                // Neither side looks like a plausible author name - don't
+                // guess one; fall through and keep the dash-joined name
+                // intact as the title below.
+            }
+
+            // "Title (Author)" / "Title [Author]"
+            const bracketMatch = name.match(/^(.+?)\s*[\(\[]([^)\]]+)[\)\]]\s*$/);
+            if (bracketMatch && plausibleAuthor(bracketMatch[2])) {
+                return { title: bracketMatch[1].trim(), author: bracketMatch[2].trim() };
+            }
+
+            // Nothing matched confidently - use the cleaned-up name as the
+            // title and leave author for the user to fill in.
+            return { title: name, author: '' };
+        }
+
         // --- Local file storage (IndexedDB) --------------------------------
         // URL.createObjectURL() blob: URLs only live for the page's current
         // session - closing and reopening the app (or even just reloading)
@@ -2905,10 +3002,11 @@
                 const source = (mime && mime !== file.type) ? new Blob([file], { type: mime }) : file;
                 const url = URL.createObjectURL(source);
                 const baseName = file.name.replace(/\.[^/.]+$/, "");
+                const detected = parseAudioFilenameForTitleAuthor(file.name);
                 const newItem = {
                     id: 'item_' + Date.now() + Math.random().toString(36).substr(2, 5),
-                    title: baseName,
-                    author: file.name.endsWith('.m4b') ? 'Audiobook' : 'Local Import',
+                    title: detected.title || baseName,
+                    author: detected.author || (file.name.endsWith('.m4b') ? 'Audiobook' : 'Local Import'),
                     url: url,
                     local: true,
                     folder: file.name.endsWith('.m4b') ? 'Audiobooks' : '',
@@ -2974,6 +3072,26 @@
             saveState();
             renderLibrary();
             updateFolderDropdowns();
+        }
+
+        // Fires when the URL field loses focus - guesses title/author from
+        // the URL's own filename and fills in whichever of those fields is
+        // still empty. Never overwrites something the user already typed.
+        function autoFillTitleAuthorFromUrl(url) {
+            if (!url) return;
+            let filename;
+            try {
+                filename = decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop() || '');
+            } catch (e) {
+                return; // not a parseable absolute URL yet
+            }
+            if (!filename) return;
+
+            const detected = parseAudioFilenameForTitleAuthor(filename);
+            const titleField = document.getElementById('direct-title-input');
+            const authorField = document.getElementById('direct-author-input');
+            if (!titleField.value.trim() && detected.title) titleField.value = toTitleCase(detected.title);
+            if (!authorField.value.trim() && detected.author) authorField.value = toTitleCase(detected.author);
         }
 
         function addAudioFromUrl() {
