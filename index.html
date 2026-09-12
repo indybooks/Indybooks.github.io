@@ -3270,14 +3270,25 @@
 
                 try {
                     let xmlText = '';
+                    // Free public CORS proxies are individually unreliable
+                    // (rate limits, outages, some hosts blocking known
+                    // proxy IPs outright) - a few more options here means
+                    // one feed's proxies all failing at once is less likely
+                    // to take the whole import down with it. Labeled
+                    // explicitly rather than derived from the URL - several
+                    // of these (thingproxy especially) append the target
+                    // URL directly with no '?', so slicing on that would
+                    // produce an unreadably long diagnostic label.
                     const fetchSources = [
-                        urlInput,
-                        `https://api.allorigins.win/get?url=${encodeURIComponent(urlInput)}`,
-                        `https://api.allorigins.win/raw?url=${encodeURIComponent(urlInput)}`,
-                        `https://corsproxy.io/?${encodeURIComponent(urlInput)}`
+                        { label: 'Direct fetch', url: urlInput },
+                        { label: 'allorigins (get)', url: `https://api.allorigins.win/get?url=${encodeURIComponent(urlInput)}` },
+                        { label: 'allorigins (raw)', url: `https://api.allorigins.win/raw?url=${encodeURIComponent(urlInput)}` },
+                        { label: 'corsproxy.io', url: `https://corsproxy.io/?${encodeURIComponent(urlInput)}` },
+                        { label: 'codetabs', url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(urlInput)}` },
+                        { label: 'thingproxy', url: `https://thingproxy.freeboard.io/fetch/${urlInput}` }
                     ];
 
-                    for (const src of fetchSources) {
+                    for (const { label, url: src } of fetchSources) {
                         try {
                             const res = await fetch(src, { headers: { 'Accept': 'application/rss+xml, application/xml, text/xml, */*' } });
                             if (res.ok) {
@@ -3293,13 +3304,13 @@
                                     xmlText = text;
                                     break;
                                 }
-                                fetchDiagnostics.push(`${src.split('?')[0]}: responded but not recognizable as RSS/XML`);
+                                fetchDiagnostics.push(`${label}: responded but not recognizable as RSS/XML`);
                             } else {
-                                fetchDiagnostics.push(`${src.split('?')[0]}: HTTP ${res.status}`);
+                                fetchDiagnostics.push(`${label}: HTTP ${res.status}`);
                             }
                         } catch (e) {
-                            console.warn('Fetch attempt failed for', src, e);
-                            fetchDiagnostics.push(`${src.split('?')[0]}: ${e.message}`);
+                            console.warn('Fetch attempt failed for', label, src, e);
+                            fetchDiagnostics.push(`${label}: ${e.message}`);
                         }
                     }
 

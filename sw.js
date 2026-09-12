@@ -55,6 +55,23 @@ self.addEventListener('fetch', event => {
     // exactly as if no service worker existed.
     if (event.request.method !== 'GET') return;
 
+    // Only ever intercept this app's own shell (same-origin) and the
+    // specific CDN libraries explicitly precached above. Every other GET -
+    // RSS feeds, the CORS-proxy fallbacks that fetch them, Supabase's own
+    // API/Storage calls, any other runtime fetch the app's JS makes - was
+    // never meant to be routed through here. A cross-origin request to a
+    // site with no CORS support (true of almost every podcast RSS feed)
+    // can fail inside the SW's own fetch() with a generic "TypeError: Load
+    // failed" wrapped in "FetchEvent.respondWith received an error" - the
+    // same signature that broke audio uploads before POST requests were
+    // excluded above, just for GET this time. Left unhandled, the browser
+    // makes the request directly, exactly as if there were no service
+    // worker at all - removing it as an unnecessary extra point of
+    // failure for everything this was never meant to touch.
+    const requestUrl = new URL(event.request.url);
+    const isSameOrigin = requestUrl.origin === self.location.origin;
+    if (!isSameOrigin && !ASSETS.includes(event.request.url)) return;
+
     if (event.request.mode === 'navigate') {
         event.respondWith(
             fetch(event.request)
