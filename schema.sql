@@ -48,6 +48,11 @@ create table if not exists public.media_items (
   -- arbitrary order Postgres happened to return them, silently discarding
   -- any drag-reordering a user had done locally.
   sort_order    integer not null default 0,
+  -- Episode/publish date as epoch milliseconds, parsed from the RSS
+  -- feed's <pubDate>/<published> element at import time. Null for items
+  -- with no known date (manually added URLs, local uploads) - the "sort
+  -- by date" folder action treats those as oldest.
+  pub_date      bigint,
   tags          text[] not null default '{}',
   -- NOTE: current_time is a reserved SQL keyword, so it must be double-quoted
   -- in every hand-written query. It is kept for compatibility with the

@@ -853,6 +853,7 @@
                 currentTime: item.current_time || 0,
                 duration: item.duration || 0,
                 speed: item.speed || 1.0,
+                pubDate: item.pub_date || 0,
                 bookmarks: item.bookmarks ? item.bookmarks.map(b => ({ time: b.time, title: b.formatted_time || `Bookmark at ${formatTime(b.time)}` })) : []
             }));
 
@@ -1014,7 +1015,8 @@
                 tags: item.tags || [],
                 current_time: item.currentTime,
                 duration: item.duration,
-                speed: item.speed
+                speed: item.speed,
+                pub_date: item.pubDate || null
             });
             // This used to be silently swallowed, which is how a library
             // could look "synced" while cloud writes were actually failing
@@ -1745,6 +1747,44 @@
             return (item.folder && appState.folders.includes(item.folder)) ? item.folder : '';
         }
 
+        // Which direction each folder was last sorted in, in memory only -
+        // resets on reload, same as any other UI toggle. Not something that
+        // needs to survive a refresh or sync to another device; the sorted
+        // *order* it produces already does, via the same sort_order/cloud
+        // push path drag-reordering uses.
+        const folderSortDirection = {};
+
+        // Reorders one folder's episodes by pubDate, oldest-first or
+        // newest-first, then persists the result exactly like a manual
+        // drag-reorder would - this IS a reorder, just computed instead of
+        // dragged, so the next sync elsewhere should see it the same way.
+        // Items with no known date (pubDate 0 - manually added URLs, local
+        // uploads) sort as if they were the oldest.
+        function sortFolderByDate(folder, event) {
+            if (event) event.stopPropagation();
+            const nextDir = folderSortDirection[folder] === 'oldest' ? 'newest' : 'oldest';
+            folderSortDirection[folder] = nextDir;
+
+            const indices = [];
+            const folderItems = [];
+            appState.items.forEach((item, idx) => {
+                if (item.folder === folder) {
+                    indices.push(idx);
+                    folderItems.push(item);
+                }
+            });
+            folderItems.sort((a, b) => {
+                const da = a.pubDate || 0;
+                const db = b.pubDate || 0;
+                return nextDir === 'oldest' ? da - db : db - da;
+            });
+            indices.forEach((idx, i) => { appState.items[idx] = folderItems[i]; });
+
+            saveState();
+            renderLibrary();
+            appState.items.filter(i => i.folder === folder).forEach(i => saveStateToCloud(i));
+        }
+
         // --- Drag-to-reorder ------------------------------------------------
         // Replaces the old up/down arrow buttons. Uses Pointer Events (not
         // native HTML5 drag-and-drop, which has no touch support at all) so
@@ -2142,6 +2182,9 @@
                             <span class="text-xs text-gray-600 font-normal shrink-0">(${folderItems.length})</span>
                         </div>
                         <div class="flex items-center space-x-2 shrink-0" onclick="event.stopPropagation()">
+                            <button onclick="sortFolderByDate('${folder}', event)" class="text-xs text-gray-500 hover:text-[#3F8CB8] p-1 cursor-pointer" title="Sort episodes by date (toggles oldest/newest first)">
+                                <i class="fa-solid ${folderSortDirection[folder] === 'oldest' ? 'fa-arrow-down-1-9' : 'fa-arrow-up-1-9'}"></i>
+                            </button>
                             <input type="color" value="${folderColor}" onchange="updateFolderColor('${folder}', this.value)" class="w-5 h-5 rounded cursor-pointer border-none bg-transparent" title="Change Folder Color">
                             <button onclick="deleteFolder('${folder}')" class="text-xs text-red-500 hover:text-red-700 p-1 cursor-pointer" title="Delete Folder">
                                 <i class="fa-solid fa-trash"></i>
@@ -3379,13 +3422,21 @@
                         const enclosure = item.querySelector('enclosure');
                         let audioUrl = enclosure ? enclosure.getAttribute('url') : (item.querySelector('link[rel="enclosure"]')?.getAttribute('href') || item.querySelector('media\\:content, *|content')?.getAttribute('url') || '');
                         const epCover = item.querySelector('image, *|image, *|itunes\\:image')?.getAttribute('href') || item.querySelector('itunes\\:image')?.getAttribute('url') || channelCover;
+                        // RSS uses pubDate, Atom uses published/updated. Left
+                        // as 0 (rather than skipped) when absent/unparseable
+                        // so "sort oldest to newest" still has something
+                        // consistent to compare against.
+                        const dateText = item.querySelector('pubDate, published, updated')?.textContent?.trim();
+                        const parsedDate = dateText ? Date.parse(dateText) : NaN;
+                        const pubDate = Number.isNaN(parsedDate) ? 0 : parsedDate;
 
                         if (audioUrl) {
                             parsedEpisodes.push({
                                 title: title,
                                 author: channelAuthor,
                                 url: audioUrl,
-                                cover: epCover
+                                cover: epCover,
+                                pubDate: pubDate
                             });
                         }
                     });
@@ -3412,12 +3463,14 @@
                                 r2jData.items.forEach(item => {
                                     let audioUrl = item.enclosure?.link || item.enclosure?.url || '';
                                     if (!audioUrl && item.guid && item.guid.startsWith('http')) audioUrl = item.guid;
+                                    const parsedDate = item.pubDate ? Date.parse(item.pubDate) : NaN;
                                     if (audioUrl) {
                                         parsedEpisodes.push({
                                             title: item.title || 'Episode',
                                             author: channelAuthor,
                                             url: audioUrl,
-                                            cover: item.thumbnail || channelCover
+                                            cover: item.thumbnail || channelCover,
+                                            pubDate: Number.isNaN(parsedDate) ? 0 : parsedDate
                                         });
                                     }
                                 });
@@ -3448,6 +3501,7 @@
                         url: ep.url,
                         folder: channelTitle,
                         cover: ep.cover,
+                        pubDate: ep.pubDate || 0,
                         tags: ['podcast'],
                         currentTime: 0,
                         duration: 0,
