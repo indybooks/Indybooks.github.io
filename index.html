@@ -634,6 +634,10 @@
                 <span class="text-xs text-gray-600 font-medium">Local Storage Usage</span>
                 <button onclick="openManageStorageModal()" class="px-4 py-2 bg-gray-100 text-[#1B3F57] hover:bg-gray-200 rounded-xl text-xs font-semibold cursor-pointer">Manage Storage</button>
             </div>
+            <div class="pt-2 border-t border-gray-100 flex justify-between items-center">
+                <span class="text-xs text-gray-600 font-medium">Stuck on an old version?</span>
+                <button onclick="forceAppUpdate()" class="px-4 py-2 bg-gray-100 text-[#1B3F57] hover:bg-gray-200 rounded-xl text-xs font-semibold cursor-pointer">Force Update</button>
+            </div>
             <div id="backup-recovery-note" class="hidden pt-2 border-t border-gray-100 text-xs bg-[#FFDDA6]/40 text-[#1B3F57] rounded-xl p-3"></div>
             <div class="flex justify-end pt-2">
                 <button onclick="saveAppSettings()" class="px-5 py-2 text-xs font-semibold bg-[#3F8CB8] text-white rounded-xl shadow hover:bg-[#1B3F57] cursor-pointer">Save Settings</button>
@@ -1517,6 +1521,38 @@
                 reloadedOnce = true;
                 window.location.reload();
             });
+        }
+
+        // Manual escape hatch for exactly the update-detection gap above:
+        // Safari can go a long time (observed up to 24h on some versions)
+        // before it re-checks whether sw.js itself has changed, especially
+        // for an installed home-screen PWA - and short of digging through
+        // iOS Settings -> Safari -> Advanced -> Website Data (which lists
+        // entries by raw domain, easy to miss, and doesn't always even show
+        // a PWA's own storage), there was no way to force a fresh install
+        // from inside the app. This does the same cleanup directly: drop
+        // every service worker registration and every Cache Storage entry
+        // for this origin, then reload. Deliberately leaves localStorage
+        // (the actual library, settings, and Remember Me / auth session)
+        // untouched - this clears stale CODE, not the user's data.
+        async function forceAppUpdate() {
+            if (!confirm("This clears the app's cached files and service worker, then reloads to fetch the latest version. Your library and account stay untouched. Continue?")) return;
+            try {
+                if ('serviceWorker' in navigator) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(regs.map(r => r.unregister()));
+                }
+                if ('caches' in window) {
+                    const keys = await caches.keys();
+                    await Promise.all(keys.map(k => caches.delete(k)));
+                }
+            } catch (e) {
+                console.error('Force update cleanup failed:', e);
+            }
+            // A cache-busting query string guarantees this exact navigation
+            // can't be served from any lingering HTTP cache either, on top
+            // of the Cache Storage/service worker cleanup above.
+            window.location.href = window.location.pathname + '?forceUpdate=' + Date.now();
         }
 
         // A tab losing focus (switching apps, locking the screen) can leave the
@@ -3225,6 +3261,13 @@
                 // import than none at all). Caught internally rather than
                 // left to throw, so a failure here still falls through to
                 // that fallback instead of aborting the whole import.
+                // Collected regardless of which sources fail, so a fallback
+                // (if one ends up being needed) can tell the user exactly
+                // what went wrong with each attempt instead of just "some
+                // episodes might be missing" - console.warn alone is
+                // invisible without devtools open.
+                const fetchDiagnostics = [];
+
                 try {
                     let xmlText = '';
                     const fetchSources = [
@@ -3250,9 +3293,13 @@
                                     xmlText = text;
                                     break;
                                 }
+                                fetchDiagnostics.push(`${src.split('?')[0]}: responded but not recognizable as RSS/XML`);
+                            } else {
+                                fetchDiagnostics.push(`${src.split('?')[0]}: HTTP ${res.status}`);
                             }
                         } catch (e) {
                             console.warn('Fetch attempt failed for', src, e);
+                            fetchDiagnostics.push(`${src.split('?')[0]}: ${e.message}`);
                         }
                     }
 
@@ -3296,7 +3343,9 @@
                 // items, so this is strictly worse than the XML path above
                 // whenever that succeeds. Only reached if every direct/
                 // proxied XML fetch failed outright.
+                let usedRss2jsonFallback = false;
                 if (parsedEpisodes.length === 0) {
+                    usedRss2jsonFallback = true;
                     try {
                         const r2jRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(urlInput)}`);
                         if (r2jRes.ok) {
@@ -3318,13 +3367,13 @@
                                         });
                                     }
                                 });
-                                if (parsedEpisodes.length >= 10) {
-                                    console.warn('Imported via the rss2json fallback, which caps at 10 episodes - some older episodes may be missing. Try again later if the direct feed fetch was only temporarily unavailable.');
-                                }
                             }
+                        } else {
+                            fetchDiagnostics.push(`rss2json: HTTP ${r2jRes.status}`);
                         }
                     } catch (e) {
                         console.warn('rss2json fallback also failed:', e);
+                        fetchDiagnostics.push(`rss2json: ${e.message}`);
                     }
                 }
 
@@ -3360,7 +3409,19 @@
                 updateFolderDropdowns();
                 closeModals();
                 document.getElementById('rss-url-input').value = '';
-                alert(`Successfully imported ${parsedEpisodes.length} episodes from "${channelTitle}"!`);
+                if (usedRss2jsonFallback) {
+                    // This is the "why did I only get 10 episodes" case -
+                    // console.warn alone was invisible without devtools
+                    // open, so the exact reason each direct/proxied attempt
+                    // failed goes right in the alert.
+                    alert(
+                        `Imported ${parsedEpisodes.length} episode(s) from "${channelTitle}", but every direct/proxied feed fetch failed, so this used a fallback service that only returns the 10 most recent episodes - older ones are missing.\n\n` +
+                        `What went wrong with each attempt:\n${fetchDiagnostics.join('\n')}\n\n` +
+                        `Try again later, or check that the feed URL is correct.`
+                    );
+                } else {
+                    alert(`Successfully imported ${parsedEpisodes.length} episodes from "${channelTitle}"!`);
+                }
             } catch (err) {
                 console.error('RSS Ingestion Error:', err);
                 alert('RSS Feed Error: ' + err.message);
