@@ -3270,6 +3270,47 @@
 
                 try {
                     let xmlText = '';
+
+                    // Tried first: our own Supabase Edge Function (see
+                    // supabase/functions/fetch-feed). It runs server-side
+                    // under this project's own compute, so it's subject to
+                    // neither the browser's CORS restrictions nor the
+                    // timeout/response-size limits the free public proxies
+                    // below impose - which is what a large feed (hundreds
+                    // of episodes) can exceed even though the feed itself
+                    // is perfectly valid. Silently skipped if not signed in
+                    // (the function requires an authenticated caller) or if
+                    // the user hasn't deployed it yet - either way this
+                    // just falls through to the proxy list below.
+                    try {
+                        const { data: sessionData } = await supabaseClient.auth.getSession();
+                        const accessToken = sessionData && sessionData.session ? sessionData.session.access_token : null;
+                        if (accessToken) {
+                            const res = await fetch(`${SUPABASE_URL}/functions/v1/fetch-feed?url=${encodeURIComponent(urlInput)}`, {
+                                headers: {
+                                    'Authorization': `Bearer ${accessToken}`,
+                                    'apikey': SUPABASE_ANON_KEY,
+                                    'Accept': 'application/rss+xml, application/xml, text/xml, */*'
+                                }
+                            });
+                            if (res.ok) {
+                                const text = (await res.text()).trim();
+                                if (text.includes('<rss') || text.includes('<feed') || text.includes('<?xml') || text.includes('<channel')) {
+                                    xmlText = text;
+                                } else {
+                                    fetchDiagnostics.push('IndyBooks feed fetcher: responded but not recognizable as RSS/XML');
+                                }
+                            } else {
+                                fetchDiagnostics.push(`IndyBooks feed fetcher: HTTP ${res.status}`);
+                            }
+                        } else {
+                            fetchDiagnostics.push('IndyBooks feed fetcher: skipped (not signed in)');
+                        }
+                    } catch (e) {
+                        console.warn('Edge Function feed fetch failed:', e);
+                        fetchDiagnostics.push(`IndyBooks feed fetcher: ${e.message}`);
+                    }
+
                     // Free public CORS proxies are individually unreliable
                     // (rate limits, outages, some hosts blocking known
                     // proxy IPs outright) - a few more options here means
@@ -3288,29 +3329,31 @@
                         { label: 'thingproxy', url: `https://thingproxy.freeboard.io/fetch/${urlInput}` }
                     ];
 
-                    for (const { label, url: src } of fetchSources) {
-                        try {
-                            const res = await fetch(src, { headers: { 'Accept': 'application/rss+xml, application/xml, text/xml, */*' } });
-                            if (res.ok) {
-                                let text = await res.text();
-                                if (src.includes('allorigins.win/get')) {
-                                    try {
-                                        const json = JSON.parse(text);
-                                        text = json.contents || '';
-                                    } catch (e) {}
+                    if (!xmlText) {
+                        for (const { label, url: src } of fetchSources) {
+                            try {
+                                const res = await fetch(src, { headers: { 'Accept': 'application/rss+xml, application/xml, text/xml, */*' } });
+                                if (res.ok) {
+                                    let text = await res.text();
+                                    if (src.includes('allorigins.win/get')) {
+                                        try {
+                                            const json = JSON.parse(text);
+                                            text = json.contents || '';
+                                        } catch (e) {}
+                                    }
+                                    text = text.trim();
+                                    if (text.includes('<rss') || text.includes('<feed') || text.includes('<?xml') || text.includes('<channel')) {
+                                        xmlText = text;
+                                        break;
+                                    }
+                                    fetchDiagnostics.push(`${label}: responded but not recognizable as RSS/XML`);
+                                } else {
+                                    fetchDiagnostics.push(`${label}: HTTP ${res.status}`);
                                 }
-                                text = text.trim();
-                                if (text.includes('<rss') || text.includes('<feed') || text.includes('<?xml') || text.includes('<channel')) {
-                                    xmlText = text;
-                                    break;
-                                }
-                                fetchDiagnostics.push(`${label}: responded but not recognizable as RSS/XML`);
-                            } else {
-                                fetchDiagnostics.push(`${label}: HTTP ${res.status}`);
+                            } catch (e) {
+                                console.warn('Fetch attempt failed for', label, src, e);
+                                fetchDiagnostics.push(`${label}: ${e.message}`);
                             }
-                        } catch (e) {
-                            console.warn('Fetch attempt failed for', label, src, e);
-                            fetchDiagnostics.push(`${label}: ${e.message}`);
                         }
                     }
 
