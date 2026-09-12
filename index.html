@@ -331,8 +331,14 @@
                 <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
             <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Remove Text from Title (Optional)</label>
+                <input type="text" id="bulk-title-remove-input" placeholder="e.g. Episode: " class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2">
+
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Title Prefix (Optional)</label>
                 <input type="text" id="bulk-title-prefix" placeholder="e.g. Volume 1 - " class="autocap w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2" onblur="this.value = toTitleCase(this.value)">
+
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Remove Text from Author (Optional)</label>
+                <input type="text" id="bulk-author-remove-input" placeholder="e.g. Narrated by " class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2">
 
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Author</label>
                 <input type="text" id="bulk-author-input" placeholder="Update Author across selected" class="autocap w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2" onblur="this.value = toTitleCase(this.value)">
@@ -1998,7 +2004,9 @@
 
         function openBulkEditModal() {
             if (appState.selectedItemIds.length === 0) return;
+            document.getElementById('bulk-title-remove-input').value = '';
             document.getElementById('bulk-title-prefix').value = '';
+            document.getElementById('bulk-author-remove-input').value = '';
             document.getElementById('bulk-author-input').value = '';
             document.getElementById('bulk-cover-input').value = '';
             document.getElementById('bulk-cover-file').value = '';
@@ -2057,8 +2065,21 @@
                 });
         }
 
+        // Literal (non-regex) substring removal, all occurrences - a user
+        // typing text to strip out shouldn't have to think about regex
+        // special characters. Collapses whatever whitespace gap the
+        // removal leaves behind rather than leaving "  " or a stray
+        // leading/trailing space, since the removed text is often a
+        // prefix/suffix that included its own separating space.
+        function removeTextAllOccurrences(source, textToRemove) {
+            if (!textToRemove) return source;
+            return source.split(textToRemove).join(' ').replace(/\s+/g, ' ').trim();
+        }
+
         function saveBulkEdits() {
+            const titleRemove = document.getElementById('bulk-title-remove-input').value;
             const prefix = document.getElementById('bulk-title-prefix').value.trim();
+            const authorRemove = document.getElementById('bulk-author-remove-input').value;
             const author = document.getElementById('bulk-author-input').value.trim();
             const cover = document.getElementById('bulk-cover-input').value.trim();
             if (cover && cover.length > MAX_COVER_DATA_LENGTH) {
@@ -2074,7 +2095,13 @@
             appState.selectedItemIds.forEach(id => {
                 const item = appState.items.find(i => i.id === id);
                 if (item) {
+                    // Removal runs before prefix/set so it can clean up raw
+                    // imported text (e.g. an RSS feed's repeated episode
+                    // prefix) that a subsequent prefix or a hard author
+                    // override then builds on top of.
+                    if (titleRemove) item.title = removeTextAllOccurrences(item.title, titleRemove);
                     if (prefix) item.title = prefix + item.title;
+                    if (authorRemove) item.author = removeTextAllOccurrences(item.author || '', authorRemove);
                     if (author) item.author = author;
                     if (cover) item.cover = cover;
                     if (moveToFolder) item.folder = folderValue;
