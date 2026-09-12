@@ -19,6 +19,7 @@
 // will block the calling page from reading it.
 const ALLOWED_ORIGINS = [
     'https://indybooks.github.io',
+    'https://fourble.co.uk',
 ];
 
 const MAX_RESPONSE_BYTES = 15 * 1024 * 1024; // generous - real feeds run KB to a few MB
