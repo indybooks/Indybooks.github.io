@@ -1,0 +1,34 @@
+name: Deploy fetch-feed Edge Function
+
+# Deploys supabase/functions/fetch-feed to the live Supabase project
+# whenever it changes on main, so a code change here doesn't also require
+# someone to remember to run `supabase functions deploy` by hand.
+#
+# Requires one repository secret: SUPABASE_ACCESS_TOKEN, a personal access
+# token from https://supabase.com/dashboard/account/tokens, added at
+# Settings -> Secrets and variables -> Actions in this repo.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/fetch-feed/**'
+      - '.github/workflows/deploy-fetch-feed.yml'
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy fetch-feed
+        # The project ref isn't secret - it's the same one already visible
+        # in index.html's SUPABASE_URL - only the access token needs to be.
+        run: supabase functions deploy fetch-feed --project-ref rpgueqafknvrwvrbzixd
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
