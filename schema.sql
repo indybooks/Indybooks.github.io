@@ -43,6 +43,11 @@ create table if not exists public.media_items (
   storage_path  text,
   cover_url     text default '',
   folder        text default '',
+  -- Position among the other items sharing the same folder (lower sorts
+  -- first). Without this, every cloud sync pulled rows back in whatever
+  -- arbitrary order Postgres happened to return them, silently discarding
+  -- any drag-reordering a user had done locally.
+  sort_order    integer not null default 0,
   tags          text[] not null default '{}',
   -- NOTE: current_time is a reserved SQL keyword, so it must be double-quoted
   -- in every hand-written query. It is kept for compatibility with the

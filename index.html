@@ -523,7 +523,10 @@
             <div>
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Cover Image (URL or Photo Library)</label>
                 <input type="url" id="edit-cover-input" placeholder="https://..." class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2">
-                <input type="file" id="edit-cover-file" accept="image/*" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#FFDDA6] file:text-[#1B3F57]" onchange="handleCoverImageUpload(event)">
+                <div class="flex items-center gap-2">
+                    <input type="file" id="edit-cover-file" accept="image/*" class="flex-1 min-w-0 text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#FFDDA6] file:text-[#1B3F57]" onchange="handleCoverImageUpload(event)">
+                    <button type="button" onclick="removeCoverFromEditForm()" class="shrink-0 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 rounded-xl cursor-pointer">Remove Cover</button>
+                </div>
             </div>
             <div>
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Folder</label>
@@ -790,10 +793,16 @@
             // function treats as "local" state. Deciding what's local up
             // front closes that window entirely.
             const localSnapshot = appState.items;
+            // Ties (two different folders both having an item at
+            // sort_order 0, say) don't matter here - renderLibrary()
+            // groups by folder before it ever uses relative order, so only
+            // the ordering *within* each folder needs to be correct, and
+            // this preserves that regardless of how folders interleave.
             let { data, error } = await supabaseClient
                 .from('media_items')
                 .select('*, bookmarks(*)')
-                .eq('user_id', userId);
+                .eq('user_id', userId)
+                .order('sort_order', { ascending: true });
             if (error) {
                 // The bookmarks(*) embed depends on PostgREST already
                 // knowing about the foreign key between media_items and
@@ -805,7 +814,7 @@
                 // titles/covers/progress/folders still come through; only
                 // bookmarks themselves are affected.
                 console.warn('Bookmark-embedded library fetch failed, retrying without it:', error.message);
-                const fallback = await supabaseClient.from('media_items').select('*').eq('user_id', userId);
+                const fallback = await supabaseClient.from('media_items').select('*').eq('user_id', userId).order('sort_order', { ascending: true });
                 data = fallback.data;
                 error = fallback.error;
                 if (!error) {
@@ -993,6 +1002,11 @@
                 storage_path: item.storagePath || null,
                 cover_url: item.cover,
                 folder: item.folder,
+                // Recomputed fresh on every save from the item's actual
+                // current position among its own folder-mates in
+                // appState.items - never stored on the item itself, so it
+                // can't go stale relative to the array it's derived from.
+                sort_order: appState.items.filter(i => i.folder === item.folder).findIndex(i => i.id === item.id),
                 tags: item.tags || [],
                 current_time: item.currentTime,
                 duration: item.duration,
@@ -1786,6 +1800,12 @@
             appState.items.splice(targetIdx, 0, draggedItem);
             saveState();
             renderLibrary();
+            // Every item sharing this folder just had its relative
+            // position among folder-mates potentially shift, not only the
+            // dragged one - push the new order for all of them so the next
+            // cloud sync (e.g. on sign-in from another device) doesn't pull
+            // the old order back.
+            appState.items.filter(i => libraryGroupOf(i) === group).forEach(i => saveStateToCloud(i));
         }
 
         // Same pointer-drag mechanics as item reordering above, but over
@@ -3194,36 +3214,18 @@
                 let channelAuthor = 'Podcast Creator';
                 let channelCover = '';
 
-                // Method 1: Try rss2json API (Bypasses CORS restrictions reliably for RSS)
+                // Raw XML first, not rss2json: rss2json's free tier silently
+                // caps results at 10 items regardless of the feed's actual
+                // size, and since it used to run first and "succeed" (10
+                // items is still > 0), the full-feed fallback below never
+                // even ran. Parsing the real XML ourselves has no such
+                // limit, so it's now the primary path; rss2json is kept
+                // only as a last resort for feeds where every direct/
+                // proxied XML fetch fails outright (better an incomplete
+                // import than none at all). Caught internally rather than
+                // left to throw, so a failure here still falls through to
+                // that fallback instead of aborting the whole import.
                 try {
-                    const r2jRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(urlInput)}`);
-                    if (r2jRes.ok) {
-                        const r2jData = await r2jRes.json();
-                        if (r2jData.status === 'ok' && r2jData.items && r2jData.items.length > 0) {
-                            channelTitle = r2jData.feed?.title || channelTitle;
-                            channelAuthor = r2jData.feed?.author || channelAuthor;
-                            channelCover = r2jData.feed?.image || '';
-
-                            r2jData.items.forEach(item => {
-                                let audioUrl = item.enclosure?.link || item.enclosure?.url || '';
-                                if (!audioUrl && item.guid && item.guid.startsWith('http')) audioUrl = item.guid;
-                                if (audioUrl) {
-                                    parsedEpisodes.push({
-                                        title: item.title || 'Episode',
-                                        author: channelAuthor,
-                                        url: audioUrl,
-                                        cover: item.thumbnail || channelCover
-                                    });
-                                }
-                            });
-                        }
-                    }
-                } catch (e) {
-                    console.warn('rss2json conversion attempt failed:', e);
-                }
-
-                // Method 2: Fallback to Raw XML Fetching via Proxies
-                if (parsedEpisodes.length === 0) {
                     let xmlText = '';
                     const fetchSources = [
                         urlInput,
@@ -3254,7 +3256,7 @@
                         }
                     }
 
-                    if (!xmlText) throw new Error('Could not retrieve RSS feed. Please verify the URL or try again later.');
+                    if (!xmlText) throw new Error('Could not retrieve RSS feed via direct/proxied fetch.');
 
                     xmlText = xmlText.replace(/^\s*[\uFEFF\uFFFE]/, '').trim();
 
@@ -3268,9 +3270,10 @@
                     channelAuthor = xml.querySelector('channel > author, channel > *|author, channel > *|owner > *|name, feed > author > name')?.textContent?.trim() || channelAuthor;
                     channelCover = xml.querySelector('channel > image > url, channel > *|image')?.getAttribute('href') || xml.querySelector('channel > *|image')?.getAttribute('url') || '';
 
+                    // No per-feed cap here - every episode the feed actually
+                    // lists gets imported.
                     const items = xml.querySelectorAll('item, entry');
-                    items.forEach((item, index) => {
-                        if (index > 30) return;
+                    items.forEach(item => {
                         const title = item.querySelector('title')?.textContent?.trim() || 'Episode';
                         const enclosure = item.querySelector('enclosure');
                         let audioUrl = enclosure ? enclosure.getAttribute('url') : (item.querySelector('link[rel="enclosure"]')?.getAttribute('href') || item.querySelector('media\\:content, *|content')?.getAttribute('url') || '');
@@ -3285,6 +3288,44 @@
                             });
                         }
                     });
+                } catch (e) {
+                    console.warn('Raw XML RSS fetch/parse failed, will try rss2json as a fallback:', e);
+                }
+
+                // Fallback only - rss2json's free tier caps results at 10
+                // items, so this is strictly worse than the XML path above
+                // whenever that succeeds. Only reached if every direct/
+                // proxied XML fetch failed outright.
+                if (parsedEpisodes.length === 0) {
+                    try {
+                        const r2jRes = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(urlInput)}`);
+                        if (r2jRes.ok) {
+                            const r2jData = await r2jRes.json();
+                            if (r2jData.status === 'ok' && r2jData.items && r2jData.items.length > 0) {
+                                channelTitle = r2jData.feed?.title || channelTitle;
+                                channelAuthor = r2jData.feed?.author || channelAuthor;
+                                channelCover = r2jData.feed?.image || '';
+
+                                r2jData.items.forEach(item => {
+                                    let audioUrl = item.enclosure?.link || item.enclosure?.url || '';
+                                    if (!audioUrl && item.guid && item.guid.startsWith('http')) audioUrl = item.guid;
+                                    if (audioUrl) {
+                                        parsedEpisodes.push({
+                                            title: item.title || 'Episode',
+                                            author: channelAuthor,
+                                            url: audioUrl,
+                                            cover: item.thumbnail || channelCover
+                                        });
+                                    }
+                                });
+                                if (parsedEpisodes.length >= 10) {
+                                    console.warn('Imported via the rss2json fallback, which caps at 10 episodes - some older episodes may be missing. Try again later if the direct feed fetch was only temporarily unavailable.');
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('rss2json fallback also failed:', e);
+                    }
                 }
 
                 if (parsedEpisodes.length === 0) {
@@ -3456,6 +3497,15 @@
                 });
         }
 
+        // There was previously no way to remove a cover once set -
+        // saveItemEdits() only ever applied a NEW cover, never cleared an
+        // existing one, and the field's own value was a giant base64
+        // string a user couldn't reasonably select-and-delete by hand.
+        function removeCoverFromEditForm() {
+            document.getElementById('edit-cover-input').value = '';
+            document.getElementById('edit-cover-file').value = '';
+        }
+
         function closeModals() {
             document.querySelectorAll('[id$="-modal"]').forEach(m => {
                 if (m.id !== 'goodreads-modal' && m.id !== 'player-modal') {
@@ -3472,14 +3522,17 @@
             if (!item) return;
             item.author = document.getElementById('edit-author-input').value.trim() || item.author;
             item.title = document.getElementById('edit-title-input').value.trim() || item.title;
+            // Unconditional, unlike author/title above: this field is
+            // pre-populated with the item's actual current cover on open
+            // (see openEditModal), so an empty value here is a deliberate
+            // "Remove Cover" / manually-cleared choice, not an accidental
+            // blank to fall back from.
             const newCover = document.getElementById('edit-cover-input').value.trim();
-            if (newCover) {
-                if (newCover.length > MAX_COVER_DATA_LENGTH) {
-                    alert('That cover image is too large to save. Please choose a different photo.');
-                    return;
-                }
-                item.cover = newCover;
+            if (newCover.length > MAX_COVER_DATA_LENGTH) {
+                alert('That cover image is too large to save. Please choose a different photo.');
+                return;
             }
+            item.cover = newCover;
             item.folder = document.getElementById('edit-folder-select').value;
             const rawTags = document.getElementById('edit-tags-input').value;
             item.tags = rawTags ? rawTags.split(',').map(t => t.trim()).filter(Boolean) : [];
