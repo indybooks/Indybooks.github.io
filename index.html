@@ -1289,6 +1289,21 @@
         // clear whatever's already poisoning a save that keeps failing.
         const MAX_COVER_DATA_LENGTH = 300000;
 
+        // Different browsers/engines surface a full storage quota under
+        // different names/codes - Chrome and Safari as a DOMException named
+        // QuotaExceededError (code 22), older Firefox as
+        // NS_ERROR_DOM_QUOTA_REACHED (code 1014). Anything else (a bug, a
+        // disabled storage backend, Safari private browsing's blanket
+        // write denial) is a real failure but not actually "storage is
+        // full", and telling someone to shrink a cover image for it just
+        // sends them chasing the wrong fix.
+        function isQuotaExceededError(e) {
+            return e instanceof DOMException && (
+                e.code === 22 || e.code === 1014 ||
+                e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+            );
+        }
+
         let lastQuotaAlertAt = 0;
         // A single oversized item makes EVERY future saveState() call fail
         // identically - including the ~4x/second ones onAudioTimeUpdate
@@ -1391,33 +1406,65 @@
                 // line either (e.g. saveItemEdits() closing the modal).
                 console.error('saveState() could not write to localStorage:', e);
 
-                // Self-heal rather than fail forever: an oversized cover is
-                // the near-universal cause, and once one is stuck in
-                // appState.items every future save - including the one
-                // importLibraryBackup() triggers right after "restoring" -
-                // fails the exact same way, with no way back in from inside
-                // the app. Strip any such covers and retry once before
-                // giving up.
+                if (!isQuotaExceededError(e)) {
+                    // Every localStorage.setItem() failure used to be
+                    // reported as "storage is full", even ones that have
+                    // nothing to do with capacity (Safari private browsing
+                    // blocking writes outright, a disabled/corrupted
+                    // storage backend, etc.) - telling someone to shrink a
+                    // cover image for a problem that isn't a full quota at
+                    // all sent them chasing the wrong fix.
+                    showQuotaAlert(`Couldn't save your library: ${e && e.message ? e.message : e}. Please try again, or reload the app.`);
+                    return false;
+                }
+
+                // Self-heal rather than fail forever: once something too
+                // large is stuck in appState.items, every future save -
+                // including the one importLibraryBackup() triggers right
+                // after "restoring" - fails the exact same way, with no way
+                // back in from inside the app. Two tiers, cheapest first:
+                // strip only individually oversized covers (one huge
+                // unresized photo, the common case); if that alone isn't
+                // enough - many ordinary-sized covers that individually
+                // look fine but add up past quota together - strip every
+                // remaining cover before giving up entirely.
                 const oversized = appState.items.filter(i => i.cover && i.cover.length > MAX_COVER_DATA_LENGTH);
                 if (oversized.length > 0) {
                     oversized.forEach(i => { i.cover = ''; });
                     try {
                         persistCoreState();
+                        finishSuccessfulSave();
+                        renderLibrary();
+                        showQuotaAlert(
+                            `Removed ${oversized.length} oversized cover image${oversized.length > 1 ? 's' : ''} to free up space so the rest of your library could be saved. ` +
+                            `You can add a smaller photo for: ${oversized.map(i => i.title).join(', ')}.`
+                        );
+                        return true;
                     } catch (e2) {
-                        console.error('saveState() still could not write after clearing oversized covers:', e2);
-                        showQuotaAlert("Couldn't save - your browser's local storage is full, even after removing oversized cover images. Try deleting a few items from your library.");
+                        console.warn('Still over quota after removing oversized covers alone, trying every cover:', e2);
+                    }
+                }
+
+                const withCovers = appState.items.filter(i => i.cover);
+                if (withCovers.length > 0) {
+                    withCovers.forEach(i => { i.cover = ''; });
+                    try {
+                        persistCoreState();
+                    } catch (e3) {
+                        console.error('saveState() still could not write after clearing every cover image:', e3);
+                        showQuotaAlert("Couldn't save - your browser's local storage is full, even after removing every cover image. Try deleting a few items from your library.");
                         return false;
                     }
                     finishSuccessfulSave();
                     renderLibrary();
                     showQuotaAlert(
-                        `Removed ${oversized.length} oversized cover image${oversized.length > 1 ? 's' : ''} to free up space so the rest of your library could be saved. ` +
-                        `You can add a smaller photo for: ${oversized.map(i => i.title).join(', ')}.`
+                        `Removed ${withCovers.length} cover image${withCovers.length > 1 ? 's' : ''} to free up space so the rest of your library could be saved - individually they looked fine, but together they filled your browser's storage. ` +
+                        `You can re-add smaller photos as needed.`
                     );
                     return true;
                 }
 
-                showQuotaAlert("Couldn't save - your browser's local storage is full. A large cover image is the most common cause; try a smaller one.");
+                showQuotaAlert("Couldn't save - your browser's local storage is full. Try deleting a few items from your library.");
                 return false;
             }
 
@@ -2004,6 +2051,7 @@
 
         function openBulkEditModal() {
             if (appState.selectedItemIds.length === 0) return;
+            coverUploadToken++;
             document.getElementById('bulk-title-remove-input').value = '';
             document.getElementById('bulk-title-prefix').value = '';
             document.getElementById('bulk-author-remove-input').value = '';
@@ -2054,11 +2102,25 @@
             });
         }
 
+        // Bumped whenever the single-item or bulk edit modal (re)opens, so
+        // an image resize started for one item/selection can't land on
+        // whatever item or selection happens to be open by the time it
+        // finishes. Resizing a large photo isn't instant - closing that
+        // modal and opening a different item's before it resolves used to
+        // mean the cover silently applied to the wrong item once the
+        // promise settled, since both handlers below just wrote straight
+        // into whichever cover field was currently on screen.
+        let coverUploadToken = 0;
+
         function handleBulkCoverUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
+            const tokenAtPick = coverUploadToken;
             resizeImageToDataUrl(file, 500, 0.82)
-                .then(dataUrl => { document.getElementById('bulk-cover-input').value = dataUrl; })
+                .then(dataUrl => {
+                    if (tokenAtPick !== coverUploadToken) return;
+                    document.getElementById('bulk-cover-input').value = dataUrl;
+                })
                 .catch(err => {
                     console.error('Cover image processing failed:', err);
                     alert("Couldn't process that image. Please try a different file.");
@@ -3672,6 +3734,7 @@
         function openEditModal(id) {
             const item = appState.items.find(i => i.id === id);
             if (!item) return;
+            coverUploadToken++;
             document.getElementById('edit-item-id').value = item.id;
             document.getElementById('edit-author-input').value = item.author || '';
             document.getElementById('edit-title-input').value = item.title;
@@ -3685,8 +3748,12 @@
         function handleCoverImageUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
+            const tokenAtPick = coverUploadToken;
             resizeImageToDataUrl(file, 500, 0.82)
-                .then(dataUrl => { document.getElementById('edit-cover-input').value = dataUrl; })
+                .then(dataUrl => {
+                    if (tokenAtPick !== coverUploadToken) return;
+                    document.getElementById('edit-cover-input').value = dataUrl;
+                })
                 .catch(err => {
                     console.error('Cover image processing failed:', err);
                     alert("Couldn't process that image. Please try a different file.");
