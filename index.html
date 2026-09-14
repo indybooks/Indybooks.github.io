@@ -1523,6 +1523,36 @@
             updateFolderDropdowns();
         }
 
+        // One-time repair for a now-fixed bug: items generated with the old,
+        // weaker id scheme (see generateItemId above) could collide when a
+        // large RSS import minted hundreds of ids in one tight loop. Two
+        // different items silently sharing one id meant an edit meant for
+        // one could mutate the other instead - a library imported before
+        // this was fixed may still be carrying a leftover duplicate. This
+        // can't undo whatever cross-wiring already happened while they
+        // shared an id (there's no way to know after the fact which value
+        // came from which item) - it only makes the two independently
+        // addressable again so it can't keep happening going forward.
+        function repairDuplicateItemIds() {
+            const seenIds = new Set();
+            const duplicates = [];
+            appState.items.forEach(item => {
+                if (seenIds.has(item.id)) duplicates.push(item);
+                else seenIds.add(item.id);
+            });
+            if (duplicates.length === 0) return;
+
+            duplicates.forEach(item => { item.id = generateItemId('fix'); });
+            saveState();
+            duplicates.forEach(item => saveStateToCloud(item));
+            // The library was already rendered once before this runs (see
+            // window.onload) - refresh it so every card's data-item-id
+            // attribute matches the id it now actually has, not the shared
+            // one it was rendered with a moment ago.
+            renderLibrary();
+            console.warn(`Repaired ${duplicates.length} item(s) that had been sharing an id with another item due to a since-fixed bug.`);
+        }
+
         window.onload = function() {
             renderLibrary();
             updateFolderDropdowns();
@@ -1551,7 +1581,7 @@
             // appState.items first - otherwise a legitimately syncing device
             // would get an unnecessary "restore from backup?" prompt in the
             // couple hundred ms before its own data arrives.
-            setTimeout(checkForLibraryWipe, 2000);
+            setTimeout(() => { repairDuplicateItemIds(); checkForLibraryWipe(); }, 2000);
 
             // Same delay/reasoning as checkForLibraryWipe above - give a
             // signed-in device's auto-sync a moment to finish first, since
