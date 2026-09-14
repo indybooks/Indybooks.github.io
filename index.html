@@ -1197,14 +1197,32 @@
             // fetchUserLibrary: a folder created locally while offline (or
             // while an earlier push silently failed) shouldn't disappear
             // just because this pull doesn't know about it yet.
+            //
+            // Each of color/cover_url/parent_name is only applied when the
+            // row actually carries that field - checked with !== undefined,
+            // not truthiness. A row missing the column entirely (its value
+            // reads back as undefined here) is different from a row that
+            // has the column with a genuinely empty value ('' or null,
+            // meaning "no cover"/"no parent" on purpose) - and the two
+            // cases need opposite handling. The missing-column case isn't
+            // hypothetical: it's exactly what a folders table that hasn't
+            // been migrated to add these columns yet looks like, and
+            // treating every row's absent field as "clear this locally"
+            // was wiping out perfectly good local subfolder structure and
+            // covers on every single fetch, before the schema even caught
+            // up enough for a write to succeed once.
             const cloudNames = new Set(data.map(f => f.name));
             data.forEach(row => {
                 if (!appState.folders.includes(row.name)) appState.folders.push(row.name);
-                appState.folderColors[row.name] = row.color || '#3F8CB8';
-                if (row.cover_url) appState.folderCovers[row.name] = row.cover_url;
-                else delete appState.folderCovers[row.name];
-                if (row.parent_name) appState.folderParents[row.name] = row.parent_name;
-                else delete appState.folderParents[row.name];
+                if (row.color !== undefined) appState.folderColors[row.name] = row.color || '#3F8CB8';
+                if (row.cover_url !== undefined) {
+                    if (row.cover_url) appState.folderCovers[row.name] = row.cover_url;
+                    else delete appState.folderCovers[row.name];
+                }
+                if (row.parent_name !== undefined) {
+                    if (row.parent_name) appState.folderParents[row.name] = row.parent_name;
+                    else delete appState.folderParents[row.name];
+                }
             });
 
             // Folders that predate this device ever having cloud sync for
