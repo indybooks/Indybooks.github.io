@@ -2830,10 +2830,24 @@
                 document.getElementById('modal-title').innerText = currentItem.title;
                 document.getElementById('modal-subtitle').innerText = currentItem.author || 'IndyBooks Audio';
                 document.getElementById('modal-org-title').innerText = currentItem.title;
-                if (currentItem.cover) {
-                    document.getElementById('mini-cover').innerHTML = `<img src="${currentItem.cover}" class="w-full h-full object-cover">`;
-                    document.getElementById('modal-cover-container').innerHTML = `<img src="${currentItem.cover}" class="w-full h-full object-cover">`;
-                }
+                // Unconditional, not just when a cover is present: this used
+                // to only ever WRITE an <img> in and never restore the
+                // fallback icon, so once any track with a cover had played,
+                // its artwork stayed stuck in the mini/modal player for
+                // every subsequent track that had no cover of its own -
+                // looking exactly like that cover had "spread" to whatever
+                // track was current, even though the item data itself was
+                // never touched (a fresh reload always showed it correctly,
+                // since that re-renders this from scratch instead of
+                // reusing whatever HTML was already sitting here).
+                const coverHtml = currentItem.cover
+                    ? `<img src="${currentItem.cover}" class="w-full h-full object-cover">`
+                    : '<i class="fa-solid fa-headphones text-[#FFDDA6] text-xl"></i>';
+                const modalCoverHtml = currentItem.cover
+                    ? `<img src="${currentItem.cover}" class="w-full h-full object-cover">`
+                    : '<i class="fa-solid fa-headphones text-6xl text-[#FFDDA6]"></i>';
+                document.getElementById('mini-cover').innerHTML = coverHtml;
+                document.getElementById('modal-cover-container').innerHTML = modalCoverHtml;
             }
             document.getElementById('speed-label').innerText = `${(audioEl.playbackRate || 1.0).toFixed(1)}x`;
         }
