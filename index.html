@@ -639,6 +639,11 @@
             <div class="flex justify-end pt-2 border-t border-gray-100">
                 <button id="free-up-space-btn" onclick="freeUpAllEligibleSpace()" class="px-4 py-2 text-xs font-semibold bg-[#3F8CB8] text-white rounded-xl shadow hover:bg-[#1B3F57] cursor-pointer">Free Up Eligible Space Now</button>
             </div>
+            <div class="pt-2 border-t border-gray-100">
+                <p class="text-xs font-semibold text-[#1B3F57]">Cover Images</p>
+                <p id="cover-storage-summary" class="text-[11px] text-gray-500 mb-1"></p>
+                <div id="cover-storage-list" class="max-h-48 overflow-y-auto space-y-1 divide-y divide-gray-100"></div>
+            </div>
         </div>
     </div>
 
@@ -1473,11 +1478,18 @@
         let lastQuotaAlertAt = 0;
         // A single oversized item makes EVERY future saveState() call fail
         // identically - including the ~4x/second ones onAudioTimeUpdate
-        // makes during playback - which without this turns one real problem
-        // into an alert() flood the user can't dismiss their way out of.
+        // makes during playback - which without this turns one real,
+        // unresolved problem into an alert() flood the user can't dismiss
+        // their way out of. Since saveState() no longer auto-deletes
+        // anything to clear the condition (see its own comment), a full
+        // quota now stays full - and therefore keeps failing the exact
+        // same way - until the user does something about it by hand, so
+        // this needs a cooldown long enough not to read as "continuous
+        // errors" over the course of a play session, not just within one
+        // burst of ticks.
         function showQuotaAlert(message) {
             const now = Date.now();
-            if (now - lastQuotaAlertAt < 8000) return;
+            if (now - lastQuotaAlertAt < 120000) return;
             lastQuotaAlertAt = now;
             alert(message);
         }
@@ -1585,53 +1597,21 @@
                     return false;
                 }
 
-                // Self-heal rather than fail forever: once something too
-                // large is stuck in appState.items, every future save -
-                // including the one importLibraryBackup() triggers right
-                // after "restoring" - fails the exact same way, with no way
-                // back in from inside the app. Two tiers, cheapest first:
-                // strip only individually oversized covers (one huge
-                // unresized photo, the common case); if that alone isn't
-                // enough - many ordinary-sized covers that individually
-                // look fine but add up past quota together - strip every
-                // remaining cover before giving up entirely.
-                const oversized = appState.items.filter(i => i.cover && i.cover.length > MAX_COVER_DATA_LENGTH);
-                if (oversized.length > 0) {
-                    oversized.forEach(i => { i.cover = ''; });
-                    try {
-                        persistCoreState();
-                        finishSuccessfulSave();
-                        renderLibrary();
-                        showQuotaAlert(
-                            `Removed ${oversized.length} oversized cover image${oversized.length > 1 ? 's' : ''} to free up space so the rest of your library could be saved. ` +
-                            `You can add a smaller photo for: ${oversized.map(i => i.title).join(', ')}.`
-                        );
-                        return true;
-                    } catch (e2) {
-                        console.warn('Still over quota after removing oversized covers alone, trying every cover:', e2);
-                    }
-                }
-
-                const withCovers = appState.items.filter(i => i.cover);
-                if (withCovers.length > 0) {
-                    withCovers.forEach(i => { i.cover = ''; });
-                    try {
-                        persistCoreState();
-                    } catch (e3) {
-                        console.error('saveState() still could not write after clearing every cover image:', e3);
-                        showQuotaAlert("Couldn't save - your browser's local storage is full, even after removing every cover image. Try deleting a few items from your library.");
-                        return false;
-                    }
-                    finishSuccessfulSave();
-                    renderLibrary();
-                    showQuotaAlert(
-                        `Removed ${withCovers.length} cover image${withCovers.length > 1 ? 's' : ''} to free up space so the rest of your library could be saved - individually they looked fine, but together they filled your browser's storage. ` +
-                        `You can re-add smaller photos as needed.`
-                    );
-                    return true;
-                }
-
-                showQuotaAlert("Couldn't save - your browser's local storage is full. Try deleting a few items from your library.");
+                // Deliberately does NOT delete anything automatically. This
+                // used to self-heal by stripping cover images on its own
+                // once storage filled up - reasonable-sounding, but
+                // end-user testing found it surprising and unwanted:
+                // people's own cover images disappearing on their own, with
+                // no warning beforehand and no choice in which ones went.
+                // The write still fails here - nothing was freed - so this
+                // is reported once and left alone; freeing space (Settings
+                // -> Manage Storage, which lists cover images by size with
+                // a manual Remove Cover button) is the user's call, not
+                // this function's.
+                showQuotaAlert(
+                    "Your browser's local storage is full, so this couldn't be saved. Cover images are the most common cause. " +
+                    "Go to Settings → Manage Storage to see which covers are using the most space and remove some by hand, or delete a few items, then try again."
+                );
                 return false;
             }
 
@@ -3481,6 +3461,14 @@
             summaryEl.innerHTML = '<p class="text-center py-2">Loading storage usage...</p>';
             listEl.innerHTML = '';
 
+            // Cover images live in localStorage, an entirely separate
+            // mechanism from the IndexedDB audio cache the rest of this
+            // view is about - rendered unconditionally, up front, so a
+            // problem reading the audio cache below can never also hide
+            // this from someone whose actual problem is a full quota from
+            // covers (the reason they likely opened this view at all).
+            renderCoverStorageList();
+
             let sizes;
             try {
                 sizes = await getLocalAudioCacheSizes();
@@ -3553,6 +3541,47 @@
             if (!confirm(`Free up the local copy of "${item.title}"? It's already backed up to your account and will re-download automatically the next time you play it.`)) return;
             await deleteLocalAudio(itemId);
             await renderStorageManagementView();
+        }
+
+        // Manual, opt-in equivalent of what saveState() used to do on its
+        // own when localStorage filled up - listing every cover by size so
+        // whoever is actually low on space can see what's using it and
+        // choose for themselves what to remove, rather than the app
+        // silently deciding for them.
+        function renderCoverStorageList() {
+            const listEl = document.getElementById('cover-storage-list');
+            const summaryEl = document.getElementById('cover-storage-summary');
+            if (!listEl || !summaryEl) return;
+
+            const itemsWithCovers = appState.items.filter(i => i.cover).sort((a, b) => b.cover.length - a.cover.length);
+            if (itemsWithCovers.length === 0) {
+                summaryEl.innerText = 'No cover images stored.';
+                listEl.innerHTML = '';
+                return;
+            }
+
+            const totalBytes = itemsWithCovers.reduce((sum, i) => sum + i.cover.length, 0);
+            summaryEl.innerText = `~${formatBytes(totalBytes)} across ${itemsWithCovers.length} cover image${itemsWithCovers.length > 1 ? 's' : ''}.`;
+            listEl.innerHTML = itemsWithCovers.map(item => `
+                <div class="py-2 flex items-center justify-between gap-2">
+                    <div class="min-w-0">
+                        <p class="text-xs font-semibold text-[#1B3F57] truncate">${item.title}</p>
+                        <p class="text-[11px] text-gray-500">~${formatBytes(item.cover.length)}</p>
+                    </div>
+                    <button onclick="removeItemCoverManually('${item.id}')" class="shrink-0 px-3 py-1.5 bg-gray-100 text-red-600 hover:bg-red-50 rounded-lg text-[11px] font-semibold cursor-pointer">Remove Cover</button>
+                </div>
+            `).join('');
+        }
+
+        function removeItemCoverManually(itemId) {
+            const item = appState.items.find(i => i.id === itemId);
+            if (!item || !item.cover) return;
+            if (!confirm(`Remove the cover image for "${item.title}"? You can add a new one later from Edit.`)) return;
+            item.cover = '';
+            saveStateToCloud(item);
+            saveState();
+            renderLibrary();
+            renderCoverStorageList();
         }
 
         async function freeUpAllEligibleSpace() {
