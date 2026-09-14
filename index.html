@@ -1691,12 +1691,15 @@
 
         // Routing the <audio> element through Web Audio (createMediaElementSource)
         // is a one-way trip: once connected, the element's sound only reaches
-        // speakers via this graph. That's the only way to push volume past
-        // audioEl.volume's 1.0 ceiling, but it also opts the page out of iOS
+        // speakers via this graph. That's needed to push volume past
+        // audioEl.volume's 1.0 ceiling, and - on iOS specifically, see
+        // needsGainNodeForVolume below - it's needed for volume control to
+        // do anything audible at all. It also opts the page out of iOS
         // Safari's background-audio allowance, which is granted to a plain
-        // <audio> element but not to Web Audio processing. So this only runs
-        // lazily, the first time someone actually boosts past 100% - normal
-        // playback (the common case) stays on the native element and keeps
+        // <audio> element but not to Web Audio processing, so it stays as
+        // lazy as possible: only once someone actually touches the volume
+        // slider (immediately on iOS, only past 100% elsewhere). Anyone who
+        // never touches it keeps playing on the native element, and keeps
         // playing when the screen locks or another app opens.
         function setupAudioContext() {
             if (audioCtx) return;
@@ -1726,9 +1729,30 @@
             }
         }
 
+        // iOS Safari (uniquely among the browsers this app runs in) simply
+        // ignores audioEl.volume - setting it doesn't throw or warn, it just
+        // has no audible effect at all, for any track regardless of how it
+        // was added. The only thing iOS actually respects is a Web Audio
+        // GainNode (see setupAudioContext). iPadOS 13+ identifies itself as
+        // a desktop Mac platform but keeps this same restriction, hence the
+        // touch-support check rather than relying on the platform string
+        // alone.
+        const needsGainNodeForVolume = /iP(hone|od|ad)/.test(navigator.platform) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
         function adjustAppVolume(val) {
             const v = parseFloat(val);
-            if (!gainNode && v > 1.0) setupAudioContext();
+            // Previously this only set up the Web Audio graph for a boost
+            // above 100% - fine on platforms where audioEl.volume actually
+            // works, but on iOS that meant every adjustment within the
+            // ordinary 0-100% range (the overwhelming majority of real use)
+            // silently did nothing. Routing every volume change through Web
+            // Audio there costs the "keeps playing with the screen locked"
+            // allowance a plain <audio> element gets and Web Audio does not
+            // (see setupAudioContext's own comment) - but only once the
+            // volume slider is actually touched; anyone who leaves it at
+            // the 100% default never pays that cost, same as before.
+            if (!gainNode && (v > 1.0 || needsGainNodeForVolume)) setupAudioContext();
             if (gainNode) {
                 // Belt-and-suspenders alongside the resume() in
                 // setupAudioContext(): if the context gets suspended again
