@@ -401,7 +401,7 @@
                     </div>
                     <i class="fa-solid fa-cloud-arrow-up text-lg text-green-600"></i>
                 </div>
-                <button onclick="fetchUserLibrary(currentUser.id)" class="w-full py-2.5 bg-[#3F8CB8] text-white rounded-xl text-xs font-semibold shadow cursor-pointer">Sync From Cloud Now</button>
+                <button onclick="fetchUserFolders(currentUser.id); fetchUserLibrary(currentUser.id)" class="w-full py-2.5 bg-[#3F8CB8] text-white rounded-xl text-xs font-semibold shadow cursor-pointer">Sync From Cloud Now</button>
                 <button id="retry-cloud-sync-btn" onclick="retryCloudSync()" class="w-full py-2.5 bg-[#FFB452] text-[#1B3F57] rounded-xl text-xs font-semibold shadow cursor-pointer">Retry Cloud Sync (Push Existing Library)</button>
                 <button onclick="supabaseSignOut()" class="w-full py-2 bg-red-100 text-red-700 rounded-xl text-xs font-semibold cursor-pointer">Sign Out</button>
             </div>
@@ -863,6 +863,7 @@
             if (data && data.session) {
                 currentUser = data.session.user;
                 updateAuthUI(true);
+                fetchUserFolders(currentUser.id);
                 fetchUserLibrary(currentUser.id);
             }
         }
@@ -1029,6 +1030,7 @@
             else {
                 currentUser = data.user;
                 updateAuthUI(true);
+                fetchUserFolders(currentUser.id);
                 fetchUserLibrary(currentUser.id);
                 closeModals();
             }
@@ -1118,6 +1120,90 @@
             }
         }
 
+        // --- Folder cloud sync ------------------------------------------
+        // Folders are still identified by name, same as they've always been
+        // locally - the unique(user_id, name) constraint in schema.sql is
+        // what an upsert here conflicts on, so this is a plain per-name
+        // upsert, not a separate id-tracking scheme.
+        async function saveFolderToCloud(name) {
+            if (!supabaseClient || !currentUser) return false;
+            const { error } = await supabaseClient.from('folders').upsert({
+                user_id: currentUser.id,
+                name: name,
+                color: appState.folderColors[name] || '#3F8CB8',
+                cover_url: appState.folderCovers[name] || '',
+                parent_name: appState.folderParents[name] || null,
+            }, { onConflict: 'user_id,name' });
+            if (error) {
+                console.error('Cloud folder save failed for', name, error.message);
+                showCloudSyncError(`Couldn't sync folder "${name}" to your account: ${error.message}`);
+                return false;
+            }
+            return true;
+        }
+
+        // A rename has to change the existing row's name in place - upserting
+        // a new row under the new name would leave the old-named row behind
+        // as an orphaned duplicate on every other device.
+        async function renameFolderInCloud(oldName, newName) {
+            if (!supabaseClient || !currentUser) return false;
+            const { error } = await supabaseClient.from('folders')
+                .update({ name: newName })
+                .eq('user_id', currentUser.id)
+                .eq('name', oldName);
+            if (error) {
+                console.error('Cloud folder rename failed for', oldName, error.message);
+                showCloudSyncError(`Couldn't rename folder "${oldName}" in your account: ${error.message}`);
+                return false;
+            }
+            return true;
+        }
+
+        async function deleteFolderFromCloud(name) {
+            if (!supabaseClient || !currentUser) return;
+            const { error } = await supabaseClient.from('folders').delete().eq('user_id', currentUser.id).eq('name', name);
+            if (error) {
+                console.error('Cloud folder delete failed for', name, error.message);
+                showCloudSyncError(`Couldn't delete folder "${name}" from your account: ${error.message}`);
+            }
+        }
+
+        async function fetchUserFolders(userId) {
+            if (!supabaseClient || !userId) return;
+            const { data, error } = await supabaseClient.from('folders').select('*').eq('user_id', userId).order('created_at', { ascending: true });
+            if (error) {
+                console.error('Cloud folders fetch failed:', error.message);
+                showCloudSyncError(`Couldn't load your folders from your account: ${error.message}`);
+                return;
+            }
+            if (!data) return;
+
+            // Merge, never replace wholesale - same reasoning as
+            // fetchUserLibrary: a folder created locally while offline (or
+            // while an earlier push silently failed) shouldn't disappear
+            // just because this pull doesn't know about it yet.
+            const cloudNames = new Set(data.map(f => f.name));
+            data.forEach(row => {
+                if (!appState.folders.includes(row.name)) appState.folders.push(row.name);
+                appState.folderColors[row.name] = row.color || '#3F8CB8';
+                if (row.cover_url) appState.folderCovers[row.name] = row.cover_url;
+                else delete appState.folderCovers[row.name];
+                if (row.parent_name) appState.folderParents[row.name] = row.parent_name;
+                else delete appState.folderParents[row.name];
+            });
+
+            // Folders that predate this device ever having cloud sync for
+            // them (including every folder that existed before this feature
+            // shipped at all) get backfilled up to the cloud here, rather
+            // than staying local-only forever until someone happens to edit
+            // them.
+            appState.folders.filter(f => !cloudNames.has(f)).forEach(f => saveFolderToCloud(f));
+
+            saveState();
+            renderLibrary();
+            updateFolderDropdowns();
+        }
+
         // A cloud upload/sync only ever runs once, at the moment an item is
         // added - so anything that failed before today's fixes (missing
         // Storage bucket, stale schema cache, the missing author column)
@@ -1130,7 +1216,7 @@
                 alert('Please connect and sign in to your account first.');
                 return;
             }
-            if (appState.items.length === 0) {
+            if (appState.items.length === 0 && appState.folders.length === 0) {
                 alert('Your library is empty - nothing to sync.');
                 return;
             }
@@ -1145,7 +1231,12 @@
             const originalLabel = btn ? btn.innerText : '';
             if (btn) btn.disabled = true;
 
-            let metadataFailed = 0, audioUploaded = 0, audioFailed = 0, audioMissing = 0;
+            let metadataFailed = 0, audioUploaded = 0, audioFailed = 0, audioMissing = 0, folderFailed = 0;
+
+            for (const folderName of appState.folders) {
+                const ok = await saveFolderToCloud(folderName);
+                if (!ok) folderFailed++;
+            }
 
             for (let i = 0; i < appState.items.length; i++) {
                 const item = appState.items[i];
@@ -1183,12 +1274,13 @@
             saveState();
             if (btn) { btn.disabled = false; btn.innerText = originalLabel; }
 
-            const parts = [`Retry finished for ${appState.items.length} item(s).`];
+            const parts = [`Retry finished for ${appState.items.length} item(s) and ${appState.folders.length} folder(s).`];
             if (audioUploaded > 0) parts.push(`${audioUploaded} audio file${audioUploaded > 1 ? 's' : ''} newly uploaded.`);
             if (audioFailed > 0) parts.push(`${audioFailed} audio upload${audioFailed > 1 ? 's' : ''} still failed - see the alerts above for why.`);
             if (audioMissing > 0) parts.push(`${audioMissing} item${audioMissing > 1 ? 's' : ''} no longer ${audioMissing > 1 ? 'have a' : 'has a'} saved copy on this device - re-add ${audioMissing > 1 ? 'them' : 'it'} from the original file.`);
             if (metadataFailed > 0) parts.push(`${metadataFailed} item${metadataFailed > 1 ? 's' : ''} failed to sync - see the alerts above for why.`);
-            if (audioUploaded === 0 && audioFailed === 0 && audioMissing === 0 && metadataFailed === 0) parts.push('Everything synced successfully.');
+            if (folderFailed > 0) parts.push(`${folderFailed} folder${folderFailed > 1 ? 's' : ''} failed to sync - see the alerts above for why.`);
+            if (audioUploaded === 0 && audioFailed === 0 && audioMissing === 0 && metadataFailed === 0 && folderFailed === 0) parts.push('Everything synced successfully.');
             alert(parts.join(' '));
         }
 
@@ -1880,7 +1972,10 @@
                             speed: 1.0,
                             bookmarks: []
                         };
-                        if (!appState.folders.includes('Goodreads Books')) appState.folders.push('Goodreads Books');
+                        if (!appState.folders.includes('Goodreads Books')) {
+                            appState.folders.push('Goodreads Books');
+                            saveFolderToCloud('Goodreads Books');
+                        }
                         appState.items.push(newItem);
                         saveStateToCloud(newItem);
                     }
@@ -1950,12 +2045,6 @@
 
         function goBackFolder() {
             appState.openFolder = folderParentOf(appState.openFolder);
-            renderLibrary();
-        }
-
-        function updateFolderColor(folderName, newColor) {
-            appState.folderColors[folderName] = newColor;
-            saveState();
             renderLibrary();
         }
 
@@ -2312,6 +2401,7 @@
             if (!appState.folders.includes('Volumes')) {
                 appState.folders.push('Volumes');
                 appState.folderColors['Volumes'] = '#FF7BAC';
+                saveFolderToCloud('Volumes');
             }
 
             appState.items.push(combinedItem);
@@ -2744,6 +2834,8 @@
             // never really a shrink in that case - allowShrink:true is safe
             // either way since it only relaxes the check, never forces it.
             saveState({ allowShrink: true });
+            deleteFolderFromCloud(folderName);
+            subFolders.forEach(child => saveFolderToCloud(child));
             renderLibrary();
             updateFolderDropdowns();
         }
@@ -2796,21 +2888,24 @@
                 return;
             }
 
-            if (newName !== originalName) {
+            let childrenToRepoint = [];
+            const wasRenamed = newName !== originalName;
+
+            if (wasRenamed) {
                 // Rename: every reference to the OLD name has to move to the
                 // new one in the same pass - the folder list itself, every
                 // item pointing at it, every other folder's parent link,
                 // and the currently-open view - or those references would
                 // silently point at a folder that no longer exists.
+                childrenToRepoint = appState.folders.filter(f => appState.folderParents[f] === originalName);
+
                 const idx = appState.folders.indexOf(originalName);
                 appState.folders[idx] = newName;
 
                 const affectedItems = appState.items.filter(i => i.folder === originalName);
                 affectedItems.forEach(i => { i.folder = newName; });
 
-                appState.folders.forEach(f => {
-                    if (appState.folderParents[f] === originalName) appState.folderParents[f] = newName;
-                });
+                childrenToRepoint.forEach(f => { appState.folderParents[f] = newName; });
                 if (appState.folderParents[originalName]) {
                     appState.folderParents[newName] = appState.folderParents[originalName];
                     delete appState.folderParents[originalName];
@@ -2827,6 +2922,16 @@
             else delete appState.folderCovers[newName];
 
             saveState();
+            if (wasRenamed) {
+                // The old-named row has to be renamed in place (not
+                // upserted as a new row under the new name), or it's left
+                // behind as an orphaned duplicate on every other device -
+                // see renameFolderInCloud's own comment for why.
+                renameFolderInCloud(originalName, newName).then(() => saveFolderToCloud(newName));
+                childrenToRepoint.forEach(f => saveFolderToCloud(f));
+            } else {
+                saveFolderToCloud(newName);
+            }
             renderLibrary();
             updateFolderDropdowns();
             closeModals();
@@ -3520,6 +3625,7 @@
                 if (file.name.endsWith('.m4b') && !appState.folders.includes('Audiobooks')) {
                     appState.folders.push('Audiobooks');
                     appState.folderColors['Audiobooks'] = '#3F8CB8';
+                    saveFolderToCloud('Audiobooks');
                 }
                 appState.items.push(newItem);
                 freshLocalBlobIds.add(newItem.id);
@@ -3841,6 +3947,11 @@
                 if (!appState.folders.includes(channelTitle)) {
                     appState.folders.push(channelTitle);
                     appState.folderColors[channelTitle] = '#3F8CB8';
+                    // The show's own artwork makes a much better folder
+                    // tile than the generic fallback icon, and it's already
+                    // right here - no reason to make someone set it by hand.
+                    if (channelCover && channelCover.length <= MAX_COVER_DATA_LENGTH) appState.folderCovers[channelTitle] = channelCover;
+                    saveFolderToCloud(channelTitle);
                 }
 
                 parsedEpisodes.forEach(ep => {
@@ -3910,6 +4021,7 @@
                 if (cover) appState.folderCovers[name] = cover;
                 if (pendingFolderParent) appState.folderParents[name] = pendingFolderParent;
                 saveState();
+                saveFolderToCloud(name);
                 renderLibrary();
                 updateFolderDropdowns();
                 closeModals();
@@ -4437,9 +4549,11 @@
 
                 saveState();
                 // A restore is exactly the moment the cloud copy may be the
-                // thing that's missing data - push every restored item back
-                // up rather than waiting for its next incidental save.
+                // thing that's missing data - push every restored item and
+                // folder back up rather than waiting for its next
+                // incidental save.
                 newItems.forEach(item => saveStateToCloud(item));
+                newFolders.forEach(f => saveFolderToCloud(f));
                 renderLibrary();
                 updateFolderDropdowns();
                 closeModals();

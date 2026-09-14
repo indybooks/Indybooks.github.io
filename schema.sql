@@ -25,6 +25,14 @@ create table if not exists public.folders (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references auth.users (id) on delete cascade,
   name        text not null,
+  color       text default '#3F8CB8',
+  cover_url   text default '',
+  -- Another folder's name for this user, for subfolder support - not a
+  -- formal foreign key (name isn't unique on its own, only per-user, and
+  -- the client already handles promoting a folder's children to its own
+  -- parent when it's deleted, so DB-level cascade isn't needed on top of
+  -- that). Null/absent means top-level.
+  parent_name text,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
   unique (user_id, name)
