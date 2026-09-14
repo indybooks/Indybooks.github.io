@@ -830,6 +830,16 @@
         // without explicitly saying so is refused rather than persisted.
         let lastPersistedItemCount = appState.items.length;
 
+        // One-time cleanup: the library recovery snapshot used to live
+        // here, as a second full copy of every item (covers included) -
+        // see finishSuccessfulSave's own comment for why that was a
+        // problem and moved to IndexedDB instead. Removing the old key
+        // reclaims whatever space it was already sitting on immediately,
+        // rather than leaving it there forever with nothing to ever clear
+        // it. Safe to run unconditionally on every load - a no-op once
+        // it's already gone.
+        try { localStorage.removeItem('indybooks_last_good_snapshot'); } catch (e) {}
+
         const audioEl = document.getElementById('main-audio-element');
         let audioCtx = null;
         let gainNode = null;
@@ -1540,18 +1550,24 @@
             // recover from it. This is a same-device safety net, not a
             // substitute for the exportable JSON backup - it can't survive
             // the browser's own site data being cleared, only a bug.
+            //
+            // Lives in IndexedDB, not localStorage: this duplicates every
+            // item including every cover image, on every successful save -
+            // keeping that full second copy in the same small localStorage
+            // pool as the primary save meant a real quota error could fire
+            // well before the library's actual visible size (covers
+            // included) suggested it should, since nothing surfaced this
+            // second, equally large copy anywhere. IndexedDB has its own,
+            // much larger quota (the same one Settings -> Manage Storage's
+            // "browser storage overall" line already reports), so it's not
+            // competing with anything else for room.
             if (appState.items.length > 0) {
-                try {
-                    localStorage.setItem('indybooks_last_good_snapshot', JSON.stringify({
-                        items: appState.items,
-                        folders: appState.folders,
-                        folderColors: appState.folderColors,
-                        savedAt: Date.now(),
-                    }));
-                } catch (e) {
-                    // Quota errors etc. shouldn't block the primary save above.
-                    console.warn('Could not write recovery snapshot:', e);
-                }
+                saveLibrarySnapshotToIndexedDB({
+                    items: appState.items,
+                    folders: appState.folders,
+                    folderColors: appState.folderColors,
+                    savedAt: Date.now(),
+                });
             }
         }
 
@@ -1623,11 +1639,11 @@
         // snapshot exists, something emptied indybooks_items since that
         // snapshot was taken - offer to recover it rather than the user
         // discovering an empty library with no way back.
-        function checkForLibraryWipe() {
+        async function checkForLibraryWipe() {
             if (appState.items.length > 0) return;
             let snapshot;
             try {
-                snapshot = JSON.parse(localStorage.getItem('indybooks_last_good_snapshot') || 'null');
+                snapshot = await loadLibrarySnapshotFromIndexedDB();
             } catch (e) {
                 return;
             }
@@ -3264,6 +3280,13 @@
         // fresh, valid blob URL can be minted from them on every launch.
         const LOCAL_DB_NAME = 'indybooks_files';
         const LOCAL_DB_STORE = 'audio';
+        // Added in DB version 2, for the library recovery snapshot (see
+        // finishSuccessfulSave) - kept as its own store rather than reusing
+        // LOCAL_DB_STORE so it can never be counted as cached audio by
+        // getLocalAudioCacheSizes() below, which iterates that store's
+        // every key to size the "local audio cached on this device" figure.
+        const SNAPSHOT_DB_STORE = 'snapshot';
+        const LOCAL_DB_VERSION = 2;
         let localDbPromise = null;
         // Ids whose blob: URL was minted in *this* page session, so playItem
         // knows item.url is trustworthy without a redundant IndexedDB round trip.
@@ -3324,12 +3347,54 @@
             if (localDbPromise) return localDbPromise;
             localDbPromise = new Promise((resolve, reject) => {
                 if (!window.indexedDB) { reject(new Error('IndexedDB unavailable')); return; }
-                const req = indexedDB.open(LOCAL_DB_NAME, 1);
-                req.onupgradeneeded = () => req.result.createObjectStore(LOCAL_DB_STORE);
+                const req = indexedDB.open(LOCAL_DB_NAME, LOCAL_DB_VERSION);
+                req.onupgradeneeded = () => {
+                    const db = req.result;
+                    // Both checked with contains() rather than created
+                    // unconditionally - onupgradeneeded also fires for an
+                    // existing v1 database being upgraded to v2, where
+                    // LOCAL_DB_STORE already exists and creating it again
+                    // would throw.
+                    if (!db.objectStoreNames.contains(LOCAL_DB_STORE)) db.createObjectStore(LOCAL_DB_STORE);
+                    if (!db.objectStoreNames.contains(SNAPSHOT_DB_STORE)) db.createObjectStore(SNAPSHOT_DB_STORE);
+                };
                 req.onsuccess = () => resolve(req.result);
                 req.onerror = () => reject(req.error);
             });
             return localDbPromise;
+        }
+
+        async function saveLibrarySnapshotToIndexedDB(snapshot) {
+            try {
+                const db = await openLocalDb();
+                await new Promise((resolve, reject) => {
+                    const tx = db.transaction(SNAPSHOT_DB_STORE, 'readwrite');
+                    tx.objectStore(SNAPSHOT_DB_STORE).put(snapshot, 'latest');
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            } catch (e) {
+                // Same reasoning as before this moved out of localStorage:
+                // this is a best-effort safety net, not the primary save -
+                // a failure here shouldn't be treated as the save itself
+                // having failed.
+                console.warn('Could not write recovery snapshot to IndexedDB:', e);
+            }
+        }
+
+        async function loadLibrarySnapshotFromIndexedDB() {
+            try {
+                const db = await openLocalDb();
+                return await new Promise((resolve, reject) => {
+                    const tx = db.transaction(SNAPSHOT_DB_STORE, 'readonly');
+                    const req = tx.objectStore(SNAPSHOT_DB_STORE).get('latest');
+                    req.onsuccess = () => resolve(req.result || null);
+                    req.onerror = () => reject(req.error);
+                });
+            } catch (e) {
+                console.warn('Could not read recovery snapshot from IndexedDB:', e);
+                return null;
+            }
         }
 
         async function storeLocalAudio(id, blob) {
