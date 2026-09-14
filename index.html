@@ -492,21 +492,57 @@
 
     <!-- Create Folder Modal -->
     <div id="create-folder-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center">
-                <h3 class="text-lg font-bold text-[#1B3F57]">Create New Folder</h3>
+                <h3 id="create-folder-modal-heading" class="text-lg font-bold text-[#1B3F57]">Create New Folder</h3>
                 <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
             </div>
             <div>
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Folder Name</label>
                 <input type="text" id="folder-name-input" placeholder="e.g., Mystery Audiobooks" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#3F8CB8] mb-3">
-                
+
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Folder Theme Color</label>
-                <input type="color" id="folder-color-input" value="#3F8CB8" class="w-full h-10 border border-gray-300 rounded-xl px-2 py-1 cursor-pointer">
+                <input type="color" id="folder-color-input" value="#3F8CB8" class="w-full h-10 border border-gray-300 rounded-xl px-2 py-1 cursor-pointer mb-3">
+
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Cover Image (Optional)</label>
+                <input type="url" id="folder-cover-input" placeholder="https://..." class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2">
+                <input type="file" id="folder-cover-file" accept="image/*" class="w-full text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#FFDDA6] file:text-[#1B3F57]" onchange="handleFolderCoverUpload(event)">
             </div>
             <div class="flex justify-end space-x-2 pt-2">
                 <button onclick="closeModals()" class="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer">Cancel</button>
                 <button onclick="createFolder()" class="px-5 py-2 text-xs font-semibold bg-[#3F8CB8] text-white rounded-xl shadow hover:bg-[#1B3F57] cursor-pointer">Create Folder</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Folder Modal -->
+    <div id="edit-folder-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center">
+                <h3 class="text-lg font-bold text-[#1B3F57]">Edit Folder</h3>
+                <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <input type="hidden" id="edit-folder-original-name">
+            <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Folder Name</label>
+                <input type="text" id="edit-folder-name-input" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#3F8CB8] mb-3">
+
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Folder Theme Color</label>
+                <input type="color" id="edit-folder-color-input" class="w-full h-10 border border-gray-300 rounded-xl px-2 py-1 cursor-pointer mb-3">
+
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Cover Image (Optional)</label>
+                <input type="url" id="edit-folder-cover-input" placeholder="https://..." class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2">
+                <div class="flex items-center gap-2">
+                    <input type="file" id="edit-folder-cover-file" accept="image/*" class="flex-1 min-w-0 text-xs text-gray-500 file:mr-4 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#FFDDA6] file:text-[#1B3F57]" onchange="handleEditFolderCoverUpload(event)">
+                    <button onclick="removeCoverFromEditFolderForm()" class="text-xs text-red-500 hover:text-red-700 px-2 py-1.5 cursor-pointer shrink-0" title="Remove Cover">Remove Cover</button>
+                </div>
+            </div>
+            <div class="flex justify-between items-center pt-2">
+                <button onclick="deleteFolderFromEditModal()" class="px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 rounded-xl cursor-pointer">Delete Folder</button>
+                <div class="flex space-x-2">
+                    <button onclick="closeModals()" class="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer">Cancel</button>
+                    <button onclick="saveFolderEdits()" class="px-5 py-2 text-xs font-semibold bg-[#3F8CB8] text-white rounded-xl shadow hover:bg-[#1B3F57] cursor-pointer">Save</button>
+                </div>
             </div>
         </div>
     </div>
@@ -749,9 +785,25 @@
             items: JSON.parse(localStorage.getItem('indybooks_items') || '[]'),
             folders: JSON.parse(localStorage.getItem('indybooks_folders') || '["Indie Mystery", "Podcasts"]'),
             folderColors: JSON.parse(localStorage.getItem('indybooks_folder_colors') || '{}'),
-            collapsedFolders: JSON.parse(localStorage.getItem('indybooks_collapsed') || '[]'),
+            // Cover image (data: URI or URL) per folder name, shown as the
+            // grid tile's artwork - absent/empty means the color-fallback
+            // icon is used instead. Keyed by name for the same reason
+            // folderColors already is: folders have no id of their own.
+            folderCovers: JSON.parse(localStorage.getItem('indybooks_folder_covers') || '{}'),
+            // Sub-folder support: childName -> parentName. A folder absent
+            // from this map (or mapped to a falsy value) is top-level.
+            // Deliberately local-only, same as folders/folderColors always
+            // have been - there is no folders table sync in this app today
+            // (schema.sql's table exists but nothing here writes to it),
+            // so this rides the same localStorage + JSON-backup path.
+            folderParents: JSON.parse(localStorage.getItem('indybooks_folder_parents') || '{}'),
             queue: JSON.parse(localStorage.getItem('indybooks_queue') || '[]'),
             selectedItemIds: [],
+            // Which folder's contents the grid is currently drilled into -
+            // null means the root grid. Deliberately not persisted: always
+            // reopening at the root on launch is simpler and avoids a
+            // stale reference to a folder that got deleted elsewhere.
+            openFolder: null,
             goodreadsUser: localStorage.getItem('indybooks_goodreads') || null,
             startTrim: parseInt(localStorage.getItem('indybooks_start_trim') || '0', 10),
             endTrim: parseInt(localStorage.getItem('indybooks_end_trim') || '0', 10),
@@ -1357,7 +1409,8 @@
             localStorage.setItem('indybooks_items', JSON.stringify(appState.items));
             localStorage.setItem('indybooks_folders', JSON.stringify(appState.folders));
             localStorage.setItem('indybooks_folder_colors', JSON.stringify(appState.folderColors));
-            localStorage.setItem('indybooks_collapsed', JSON.stringify(appState.collapsedFolders));
+            localStorage.setItem('indybooks_folder_covers', JSON.stringify(appState.folderCovers));
+            localStorage.setItem('indybooks_folder_parents', JSON.stringify(appState.folderParents));
             localStorage.setItem('indybooks_queue', JSON.stringify(appState.queue));
             localStorage.setItem('indybooks_start_trim', appState.startTrim);
             localStorage.setItem('indybooks_end_trim', appState.endTrim);
@@ -1852,13 +1905,51 @@
             openPlayerModal();
         }
 
-        function toggleFolderCollapse(folderName) {
-            if (appState.collapsedFolders.includes(folderName)) {
-                appState.collapsedFolders = appState.collapsedFolders.filter(f => f !== folderName);
-            } else {
-                appState.collapsedFolders.push(folderName);
+        // --- Folder hierarchy -------------------------------------------
+        // Subfolders are just folders whose name is a key in folderParents,
+        // mapped to their parent's name. Folder identity is still the name
+        // itself (matching how folders have always worked here, and the
+        // existing per-user uniqueness folders already have) - no separate
+        // id was introduced for this.
+        function folderParentOf(folderName) {
+            return appState.folderParents[folderName] || null;
+        }
+
+        function folderChildrenOf(parentName) {
+            return appState.folders.filter(f => folderParentOf(f) === parentName);
+        }
+
+        function topLevelFolders() {
+            return folderChildrenOf(null);
+        }
+
+        // How deeply nested a folder is (0 = top-level) - used only to
+        // indent options in the plain <select> dropdowns (Edit Item, Add
+        // URL, Bulk Edit) so a subfolder reads as nested there too, without
+        // needing its own tree widget. Guards against a cyclical parent
+        // reference (shouldn't be reachable through the UI, but a corrupted
+        // backup could produce one) so this can never infinite-loop.
+        function folderDepth(folderName) {
+            let depth = 0;
+            let current = folderName;
+            const seen = new Set();
+            while (true) {
+                const parent = folderParentOf(current);
+                if (!parent || seen.has(parent)) break;
+                seen.add(parent);
+                depth++;
+                current = parent;
             }
-            saveState();
+            return depth;
+        }
+
+        function openFolderView(folderName) {
+            appState.openFolder = folderName;
+            renderLibrary();
+        }
+
+        function goBackFolder() {
+            appState.openFolder = folderParentOf(appState.openFolder);
             renderLibrary();
         }
 
@@ -2011,91 +2102,6 @@
             // cloud sync (e.g. on sign-in from another device) doesn't pull
             // the old order back.
             appState.items.filter(i => libraryGroupOf(i) === group).forEach(i => saveStateToCloud(i));
-        }
-
-        // Same pointer-drag mechanics as item reordering above, but over
-        // appState.folders (a flat name list) instead - no per-folder
-        // grouping to filter by, just every [data-folder-row] in the
-        // library container (which also holds the separate, non-folder
-        // "ungrouped items" block - excluded automatically since it never
-        // gets that attribute).
-        let folderDragState = null;
-
-        function startFolderDrag(folderName, event) {
-            if (event.button !== undefined && event.button !== 0) return;
-            event.preventDefault();
-            event.stopPropagation();
-            const handle = event.currentTarget;
-            const cardEl = handle.closest('[data-folder-row]');
-            if (!cardEl) return;
-
-            folderDragState = {
-                folderName,
-                cardEl,
-                container: cardEl.parentElement,
-                pointerId: event.pointerId,
-                startY: event.clientY,
-                moved: false,
-            };
-            handle.setPointerCapture(event.pointerId);
-            cardEl.style.position = 'relative';
-            cardEl.style.zIndex = '20';
-            cardEl.style.transition = 'none';
-            cardEl.classList.add('shadow-xl');
-
-            handle.addEventListener('pointermove', onFolderDragMove);
-            handle.addEventListener('pointerup', onFolderDragEnd);
-            handle.addEventListener('pointercancel', onFolderDragEnd);
-        }
-
-        function onFolderDragMove(event) {
-            if (!folderDragState) return;
-            const dy = event.clientY - folderDragState.startY;
-            if (Math.abs(dy) > 3) folderDragState.moved = true;
-            folderDragState.cardEl.style.transform = `translateY(${dy}px)`;
-        }
-
-        function onFolderDragEnd(event) {
-            if (!folderDragState) return;
-            const { folderName, cardEl, container, moved } = folderDragState;
-            const handle = event.currentTarget;
-            handle.removeEventListener('pointermove', onFolderDragMove);
-            handle.removeEventListener('pointerup', onFolderDragEnd);
-            handle.removeEventListener('pointercancel', onFolderDragEnd);
-            try { handle.releasePointerCapture(event.pointerId); } catch (e) {}
-
-            cardEl.style.transform = '';
-            cardEl.style.position = '';
-            cardEl.style.zIndex = '';
-            cardEl.style.transition = '';
-            cardEl.classList.remove('shadow-xl');
-            folderDragState = null;
-
-            if (!moved) return; // a tap on the handle, not a drag - no-op
-
-            const folderCards = [...container.querySelectorAll('[data-folder-row]')].filter(el => el !== cardEl);
-            const dropY = event.clientY;
-            let targetFolder = null, insertAfter = false;
-            for (const sib of folderCards) {
-                const rect = sib.getBoundingClientRect();
-                if (dropY >= rect.top && dropY <= rect.bottom) {
-                    targetFolder = sib.dataset.folderName;
-                    insertAfter = dropY > rect.top + rect.height / 2;
-                    break;
-                }
-            }
-            if (!targetFolder) return;
-
-            const draggedIdx = appState.folders.indexOf(folderName);
-            if (draggedIdx === -1) return;
-            appState.folders.splice(draggedIdx, 1);
-            let targetIdx = appState.folders.indexOf(targetFolder);
-            if (targetIdx === -1) { appState.folders.splice(draggedIdx, 0, folderName); return; }
-            if (insertAfter) targetIdx += 1;
-            appState.folders.splice(targetIdx, 0, folderName);
-            saveState();
-            renderLibrary();
-            updateFolderDropdowns();
         }
 
         function toggleItemSelection(itemId, event) {
@@ -2315,11 +2321,42 @@
             renderLibrary();
         }
 
+        // One folder grid tile: a large square cover (or a color-fallback
+        // icon when no cover is set), with the name below and a small
+        // count badge - similar layout to a podcast app's shows grid.
+        // Count includes both direct items and subfolders, since either
+        // one is "something inside" from this tile's point of view.
+        function renderFolderTile(folderName) {
+            const cover = appState.folderCovers[folderName];
+            const color = appState.folderColors[folderName] || '#3F8CB8';
+            const count = appState.items.filter(i => i.folder === folderName).length + folderChildrenOf(folderName).length;
+            return `
+                <div class="cursor-pointer" onclick="openFolderView('${folderName}')">
+                    <div class="relative aspect-square rounded-2xl shadow-sm overflow-hidden flex items-center justify-center" style="background-color: ${color}">
+                        ${cover ? `<img src="${cover}" class="w-full h-full object-cover">` : '<i class="fa-solid fa-folder text-4xl text-white/85"></i>'}
+                        ${count > 0 ? `<span class="absolute top-1.5 right-1.5 min-w-[20px] h-5 px-1.5 rounded-full bg-black/55 text-white text-[10.5px] font-bold flex items-center justify-center">${count}</span>` : ''}
+                    </div>
+                    <p class="mt-1.5 text-xs font-semibold text-[#1B3F57] truncate text-center">${folderName}</p>
+                </div>
+            `;
+        }
+
+        function renderFolderGrid(folderNames) {
+            if (folderNames.length === 0) return '';
+            return `<div class="grid grid-cols-3 sm:grid-cols-4 gap-x-3 gap-y-4">${folderNames.map(renderFolderTile).join('')}</div>`;
+        }
+
         function renderLibrary() {
             const container = document.getElementById('library-container');
             container.innerHTML = '';
 
-            if (appState.items.length === 0) {
+            // A folder deleted from elsewhere (a restore, another tab) can't
+            // leave the view stuck looking at contents that no longer exist.
+            if (appState.openFolder && !appState.folders.includes(appState.openFolder)) {
+                appState.openFolder = null;
+            }
+
+            if (appState.items.length === 0 && appState.folders.length === 0) {
                 container.innerHTML = `
                     <div class="text-center py-16 px-4 bg-white rounded-2xl border border-dashed border-gray-300 shadow-sm">
                         <div class="w-16 h-16 mx-auto mb-3 rounded-full bg-[#FFDDA6]/40 flex items-center justify-center text-[#3F8CB8]">
@@ -2332,41 +2369,63 @@
                 return;
             }
 
-            appState.folders.forEach(folder => {
-                const folderItems = appState.items.filter(item => item.folder === folder);
+            if (appState.openFolder) {
+                const folder = appState.openFolder;
                 const folderColor = appState.folderColors[folder] || '#3F8CB8';
-                const isCollapsed = appState.collapsedFolders.includes(folder);
-                const folderEl = document.createElement('div');
-                folderEl.className = 'bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden';
-                folderEl.dataset.folderRow = '';
-                folderEl.dataset.folderName = folder;
-                folderEl.innerHTML = `
-                    <div class="px-4 py-3 bg-gray-50 flex items-center justify-between border-b border-gray-100 cursor-pointer" onclick="toggleFolderCollapse('${folder}')">
-                        <div class="flex items-center space-x-2 font-semibold text-sm text-[#1B3F57] min-w-0">
-                            <div class="drag-handle shrink-0 -ml-1 w-6 h-6 flex items-center justify-center text-gray-400 hover:text-[#3F8CB8] active:text-[#3F8CB8] cursor-grab active:cursor-grabbing touch-none select-none" title="Drag to reorder folder" onpointerdown="startFolderDrag('${folder}', event)" onclick="event.stopPropagation()">
-                                <i class="fa-solid fa-grip-vertical text-sm"></i>
-                            </div>
-                            <i class="fa-solid ${isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'} text-xs text-gray-400"></i>
-                            <i class="fa-solid fa-folder shrink-0" style="color: ${folderColor}"></i>
-                            <span class="truncate">${folder}</span>
-                            <span class="text-xs text-gray-600 font-normal shrink-0">(${folderItems.length})</span>
-                        </div>
-                        <div class="flex items-center space-x-2 shrink-0" onclick="event.stopPropagation()">
-                            <button onclick="sortFolderByDate('${folder}', event)" class="text-xs text-gray-500 hover:text-[#3F8CB8] p-1 cursor-pointer" title="Sort episodes by date (toggles oldest/newest first)">
-                                <i class="fa-solid ${folderSortDirection[folder] === 'oldest' ? 'fa-arrow-down-1-9' : 'fa-arrow-up-1-9'}"></i>
-                            </button>
-                            <input type="color" value="${folderColor}" onchange="updateFolderColor('${folder}', this.value)" class="w-5 h-5 rounded cursor-pointer border-none bg-transparent" title="Change Folder Color">
-                            <button onclick="deleteFolder('${folder}')" class="text-xs text-red-500 hover:text-red-700 p-1 cursor-pointer" title="Delete Folder">
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
-                        </div>
+                const folderItems = appState.items.filter(item => item.folder === folder);
+                const subFolders = folderChildrenOf(folder);
+
+                const headerCard = document.createElement('div');
+                headerCard.className = 'bg-white rounded-2xl shadow-sm border border-gray-100 p-3 flex items-center justify-between gap-2';
+                headerCard.innerHTML = `
+                    <div class="flex items-center gap-2 min-w-0">
+                        <button onclick="goBackFolder()" class="shrink-0 w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-[#1B3F57] cursor-pointer" title="Back">
+                            <i class="fa-solid fa-chevron-left"></i>
+                        </button>
+                        <i class="fa-solid fa-folder shrink-0" style="color: ${folderColor}"></i>
+                        <h2 class="text-sm font-bold text-[#1B3F57] truncate">${folder}</h2>
                     </div>
-                    ${!isCollapsed ? `<div class="divide-y divide-gray-100">
-                        ${folderItems.length === 0 ? '<div class="p-3 text-xs text-gray-400 italic text-center">Folder is empty</div>' : folderItems.map(item => renderItemCard(item)).join('')}
-                    </div>` : ''}
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button onclick="sortFolderByDate('${folder}', event)" class="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 cursor-pointer" title="Sort episodes by date (toggles oldest/newest first)">
+                            <i class="fa-solid ${folderSortDirection[folder] === 'oldest' ? 'fa-arrow-down-1-9' : 'fa-arrow-up-1-9'} text-sm"></i>
+                        </button>
+                        <button onclick="openCreateFolderModal('${folder}')" class="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 cursor-pointer" title="New Subfolder">
+                            <i class="fa-solid fa-folder-plus text-sm"></i>
+                        </button>
+                        <button onclick="openEditFolderModal('${folder}')" class="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 cursor-pointer" title="Edit Folder">
+                            <i class="fa-solid fa-gear text-sm"></i>
+                        </button>
+                    </div>
                 `;
-                container.appendChild(folderEl);
-            });
+                container.appendChild(headerCard);
+
+                if (subFolders.length > 0) {
+                    const gridWrap = document.createElement('div');
+                    gridWrap.innerHTML = renderFolderGrid(subFolders);
+                    container.appendChild(gridWrap.firstElementChild);
+                }
+
+                if (folderItems.length > 0) {
+                    const listEl = document.createElement('div');
+                    listEl.className = 'bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-100';
+                    listEl.innerHTML = folderItems.map(item => renderItemCard(item)).join('');
+                    container.appendChild(listEl);
+                } else if (subFolders.length === 0) {
+                    const emptyEl = document.createElement('div');
+                    emptyEl.className = 'text-center py-10 px-4 bg-white rounded-2xl border border-dashed border-gray-300 text-xs text-gray-400 italic';
+                    emptyEl.innerText = 'This folder is empty.';
+                    container.appendChild(emptyEl);
+                }
+                return;
+            }
+
+            // Root view: a grid of top-level folders, then ungrouped items.
+            const topFolders = topLevelFolders();
+            if (topFolders.length > 0) {
+                const gridWrap = document.createElement('div');
+                gridWrap.innerHTML = renderFolderGrid(topFolders);
+                container.appendChild(gridWrap.firstElementChild);
+            }
 
             const ungroupedItems = appState.items.filter(item => !item.folder || !appState.folders.includes(item.folder));
             if (ungroupedItems.length > 0) {
@@ -2630,10 +2689,15 @@
 
         function deleteFolder(folderName) {
             const itemsInFolder = appState.items.filter(i => i.folder === folderName);
+            const subFolders = folderChildrenOf(folderName);
+            const grandparent = folderParentOf(folderName);
+            const promoteNote = subFolders.length > 0
+                ? ` Its ${subFolders.length} subfolder(s) will move up to ${grandparent ? `"${grandparent}"` : 'the top level'} rather than being deleted.`
+                : '';
 
             let deleteContents = false;
             if (itemsInFolder.length === 0) {
-                if (!confirm(`Delete the empty folder "${folderName}"?`)) return;
+                if (!confirm(`Delete the empty folder "${folderName}"?${promoteNote}`)) return;
             } else {
                 // OK deletes the folder AND everything in it in one go;
                 // Cancel keeps the original behavior (folder only, items
@@ -2642,7 +2706,7 @@
                 deleteContents = confirm(
                     `"${folderName}" has ${itemsInFolder.length} item(s).\n\n` +
                     `Press OK to delete the folder AND all ${itemsInFolder.length} item(s) inside it. This cannot be undone.\n` +
-                    `Press Cancel to delete just the folder - its items will be kept, ungrouped.`
+                    `Press Cancel to delete just the folder - its items will be kept, ungrouped.${promoteNote}`
                 );
                 if (!deleteContents && !confirm(`Delete the folder "${folderName}" and ungroup its ${itemsInFolder.length} item(s)? (The items themselves will not be deleted.)`)) {
                     return;
@@ -2659,8 +2723,20 @@
                 });
             }
 
+            // Direct subfolders move up to this folder's own parent rather
+            // than being silently deleted along with it - losing an entire
+            // nested branch just because its parent was removed would be a
+            // much bigger surprise than the folder itself disappearing.
+            subFolders.forEach(child => {
+                if (grandparent) appState.folderParents[child] = grandparent;
+                else delete appState.folderParents[child];
+            });
+
             appState.folders = appState.folders.filter(f => f !== folderName);
             delete appState.folderColors[folderName];
+            delete appState.folderCovers[folderName];
+            delete appState.folderParents[folderName];
+            if (appState.openFolder === folderName) appState.openFolder = grandparent;
             updateQueueBadge();
             updateBulkBar();
             // Only the deleteContents branch above actually removes items;
@@ -2670,6 +2746,96 @@
             saveState({ allowShrink: true });
             renderLibrary();
             updateFolderDropdowns();
+        }
+
+        function openEditFolderModal(folderName) {
+            coverUploadToken++;
+            document.getElementById('edit-folder-original-name').value = folderName;
+            document.getElementById('edit-folder-name-input').value = folderName;
+            document.getElementById('edit-folder-color-input').value = appState.folderColors[folderName] || '#3F8CB8';
+            document.getElementById('edit-folder-cover-input').value = appState.folderCovers[folderName] || '';
+            document.getElementById('edit-folder-cover-file').value = '';
+            document.getElementById('edit-folder-modal').classList.remove('hidden');
+            document.getElementById('edit-folder-modal').classList.add('flex');
+        }
+
+        function handleEditFolderCoverUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            coverUploadToken++;
+            const tokenAtPick = coverUploadToken;
+            resizeImageToDataUrl(file, 500, 0.82)
+                .then(dataUrl => {
+                    if (tokenAtPick !== coverUploadToken) return;
+                    document.getElementById('edit-folder-cover-input').value = dataUrl;
+                })
+                .catch(err => {
+                    console.error('Cover image processing failed:', err);
+                    alert("Couldn't process that image. Please try a different file.");
+                });
+        }
+
+        function removeCoverFromEditFolderForm() {
+            document.getElementById('edit-folder-cover-input').value = '';
+            document.getElementById('edit-folder-cover-file').value = '';
+        }
+
+        function saveFolderEdits() {
+            const originalName = document.getElementById('edit-folder-original-name').value;
+            const newName = document.getElementById('edit-folder-name-input').value.trim();
+            const color = document.getElementById('edit-folder-color-input').value;
+            const cover = document.getElementById('edit-folder-cover-input').value.trim();
+            if (!originalName || !appState.folders.includes(originalName)) return;
+            if (!newName) { alert('Folder name cannot be empty.'); return; }
+            if (cover && cover.length > MAX_COVER_DATA_LENGTH) {
+                alert('That cover image is too large to save. Please choose a different photo.');
+                return;
+            }
+            if (newName !== originalName && appState.folders.includes(newName)) {
+                alert(`A folder named "${newName}" already exists.`);
+                return;
+            }
+
+            if (newName !== originalName) {
+                // Rename: every reference to the OLD name has to move to the
+                // new one in the same pass - the folder list itself, every
+                // item pointing at it, every other folder's parent link,
+                // and the currently-open view - or those references would
+                // silently point at a folder that no longer exists.
+                const idx = appState.folders.indexOf(originalName);
+                appState.folders[idx] = newName;
+
+                const affectedItems = appState.items.filter(i => i.folder === originalName);
+                affectedItems.forEach(i => { i.folder = newName; });
+
+                appState.folders.forEach(f => {
+                    if (appState.folderParents[f] === originalName) appState.folderParents[f] = newName;
+                });
+                if (appState.folderParents[originalName]) {
+                    appState.folderParents[newName] = appState.folderParents[originalName];
+                    delete appState.folderParents[originalName];
+                }
+                delete appState.folderColors[originalName];
+                delete appState.folderCovers[originalName];
+                if (appState.openFolder === originalName) appState.openFolder = newName;
+
+                affectedItems.forEach(i => saveStateToCloud(i));
+            }
+
+            appState.folderColors[newName] = color;
+            if (cover) appState.folderCovers[newName] = cover;
+            else delete appState.folderCovers[newName];
+
+            saveState();
+            renderLibrary();
+            updateFolderDropdowns();
+            closeModals();
+        }
+
+        function deleteFolderFromEditModal() {
+            const name = document.getElementById('edit-folder-original-name').value;
+            closeModals();
+            if (name) deleteFolder(name);
         }
 
         function togglePlayPause() {
@@ -3725,17 +3891,36 @@
             }
         }
 
+        // Set by openCreateFolderModal() when it's opened from inside a
+        // folder's "New Subfolder" button - null means the new folder is
+        // created at the top level, same as every folder used to be.
+        let pendingFolderParent = null;
+
         function createFolder() {
             const name = document.getElementById('folder-name-input').value.trim();
             const color = document.getElementById('folder-color-input').value;
+            const cover = document.getElementById('folder-cover-input').value.trim();
+            if (cover && cover.length > MAX_COVER_DATA_LENGTH) {
+                alert('That cover image is too large to save. Please choose a different photo.');
+                return;
+            }
             if (name && !appState.folders.includes(name)) {
                 appState.folders.push(name);
                 appState.folderColors[name] = color;
+                if (cover) appState.folderCovers[name] = cover;
+                if (pendingFolderParent) appState.folderParents[name] = pendingFolderParent;
                 saveState();
                 renderLibrary();
                 updateFolderDropdowns();
                 closeModals();
             }
+        }
+
+        // Indented by nesting depth (a couple of non-breaking spaces per
+        // level) so a subfolder reads as nested in these plain <select>
+        // lists too, without needing a full tree widget just for this.
+        function folderOptionLabel(folderName) {
+            return '  '.repeat(folderDepth(folderName)) + folderName;
         }
 
         function updateFolderDropdowns() {
@@ -3744,7 +3929,7 @@
                 if (!select) return;
                 select.innerHTML = '<option value="">(None - Ungrouped)</option>';
                 appState.folders.forEach(f => {
-                    select.innerHTML += `<option value="${f}">${f}</option>`;
+                    select.innerHTML += `<option value="${f}">${folderOptionLabel(f)}</option>`;
                 });
             });
 
@@ -3758,7 +3943,7 @@
             if (bulkSelect) {
                 bulkSelect.innerHTML = '<option value="__nochange__" selected>No Change</option><option value="">(None - Ungrouped)</option>';
                 appState.folders.forEach(f => {
-                    bulkSelect.innerHTML += `<option value="${f}">${f}</option>`;
+                    bulkSelect.innerHTML += `<option value="${f}">${folderOptionLabel(f)}</option>`;
                 });
             }
         }
@@ -3809,11 +3994,36 @@
             document.getElementById('add-url-modal').classList.remove('hidden');
             document.getElementById('add-url-modal').classList.add('flex');
         }
-        function openCreateFolderModal() {
+        // parentName: passed when opened from inside a folder's "New
+        // Subfolder" button - omitted (undefined/null) for the ordinary
+        // top-level "New Folder" button.
+        function openCreateFolderModal(parentName) {
+            pendingFolderParent = parentName || null;
+            coverUploadToken++;
             document.getElementById('folder-name-input').value = '';
             document.getElementById('folder-color-input').value = '#3F8CB8';
+            document.getElementById('folder-cover-input').value = '';
+            document.getElementById('folder-cover-file').value = '';
+            const heading = document.getElementById('create-folder-modal-heading');
+            if (heading) heading.innerText = pendingFolderParent ? `New Subfolder in "${pendingFolderParent}"` : 'Create New Folder';
             document.getElementById('create-folder-modal').classList.remove('hidden');
             document.getElementById('create-folder-modal').classList.add('flex');
+        }
+
+        function handleFolderCoverUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            coverUploadToken++;
+            const tokenAtPick = coverUploadToken;
+            resizeImageToDataUrl(file, 500, 0.82)
+                .then(dataUrl => {
+                    if (tokenAtPick !== coverUploadToken) return;
+                    document.getElementById('folder-cover-input').value = dataUrl;
+                })
+                .catch(err => {
+                    console.error('Cover image processing failed:', err);
+                    alert("Couldn't process that image. Please try a different file.");
+                });
         }
         function openSettingsModal() { document.getElementById('settings-modal').classList.remove('hidden'); document.getElementById('settings-modal').classList.add('flex'); }
         function openSearchModal() {
@@ -4097,6 +4307,8 @@
                 items: appState.items,
                 folders: appState.folders,
                 folderColors: appState.folderColors,
+                folderCovers: appState.folderCovers,
+                folderParents: appState.folderParents,
             };
         }
 
@@ -4205,6 +4417,21 @@
                 if (payload.folderColors) {
                     newFolders.forEach(f => {
                         if (payload.folderColors[f]) appState.folderColors[f] = payload.folderColors[f];
+                    });
+                }
+                if (payload.folderCovers) {
+                    newFolders.forEach(f => {
+                        if (payload.folderCovers[f]) appState.folderCovers[f] = payload.folderCovers[f];
+                    });
+                }
+                if (payload.folderParents) {
+                    // Only honored when the parent ALSO came in with this
+                    // same restore (or already exists here) - a subfolder
+                    // pointing at a parent that doesn't exist on this device
+                    // would otherwise just vanish from the grid entirely.
+                    newFolders.forEach(f => {
+                        const parent = payload.folderParents[f];
+                        if (parent && (appState.folders.includes(parent))) appState.folderParents[f] = parent;
                     });
                 }
 
