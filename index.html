@@ -2191,6 +2191,11 @@
         function handleBulkCoverUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
+            // Also bumped here, not just on modal open: picking a second
+            // photo before the first one's resize has resolved would
+            // otherwise let whichever resize happens to finish last win,
+            // regardless of which was actually picked last.
+            coverUploadToken++;
             const tokenAtPick = coverUploadToken;
             resizeImageToDataUrl(file, 500, 0.82)
                 .then(dataUrl => {
@@ -3815,6 +3820,12 @@
             document.getElementById('edit-author-input').value = item.author || '';
             document.getElementById('edit-title-input').value = item.title;
             document.getElementById('edit-cover-input').value = item.cover || '';
+            // Only the text field above was being reset here - the file
+            // input itself kept whatever was last picked for a previous
+            // item. Harmless on its own (nothing re-reads it without a
+            // fresh user pick), but inconsistent with removeCoverFromEditForm
+            // clearing both, and one less stale reference sitting around.
+            document.getElementById('edit-cover-file').value = '';
             document.getElementById('edit-folder-select').value = item.folder || '';
             document.getElementById('edit-tags-input').value = item.tags ? item.tags.join(', ') : '';
             document.getElementById('edit-item-modal').classList.remove('hidden');
@@ -3824,6 +3835,11 @@
         function handleCoverImageUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
+            // Also bumped here, not just on modal open: picking a second
+            // photo before the first one's resize has resolved would
+            // otherwise let whichever resize happens to finish last win,
+            // regardless of which was actually picked last.
+            coverUploadToken++;
             const tokenAtPick = coverUploadToken;
             resizeImageToDataUrl(file, 500, 0.82)
                 .then(dataUrl => {
