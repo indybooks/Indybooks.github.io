@@ -666,6 +666,28 @@
 
     <!-- Client Script -->
     <script>
+        // A prior id scheme (timestamp + 5 random base-36 chars, ~26 bits
+        // of entropy) was "unique enough" for items added one at a time,
+        // but RSS import generates one id per episode inside a single tight,
+        // synchronous loop - for a large feed (500+ episodes) that's
+        // hundreds of ids minted within the same millisecond, where the
+        // real collision odds come down to that ~26 bits alone. When two
+        // episodes did collide, appState.items.find(i => i.id === id)
+        // always resolves to whichever one comes first, so editing/saving
+        // one silently mutated a different item under the hood - and since
+        // colliding ids are generated closest together in time, the pair
+        // affected was almost always adjacent in the freshly-imported,
+        // feed-ordered list. crypto.randomUUID() (Safari 15.4+, universal
+        // among browsers this PWA targets) has 122 bits of entropy, making
+        // a collision practically impossible; the old scheme is kept only
+        // as a fallback for a browser old enough to lack it.
+        function generateItemId(prefix) {
+            if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+                return prefix + '_' + window.crypto.randomUUID();
+            }
+            return prefix + '_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9) + Math.random().toString(36).substr(2, 9);
+        }
+
         const SUPABASE_URL = 'https://rpgueqafknvrwvrbzixd.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_TsTrCMyNceS2QH3b2MbpEg_A6MRkade';
         // Must match the bucket name and file_size_limit schema.sql configures
@@ -1739,7 +1761,7 @@
                         const title = cols[1] ? cols[1].replace(/"/g, '').trim() : 'Goodreads Import';
                         const author = cols[2] ? cols[2].replace(/"/g, '').trim() : 'Unknown Author';
                         const newItem = {
-                            id: 'gr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                            id: generateItemId('gr'),
                             title: title,
                             author: author,
                             url: '',
@@ -2205,7 +2227,7 @@
             }));
 
             const combinedItem = {
-                id: 'vol_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                id: generateItemId('vol'),
                 title: volTitle,
                 author: selectedItems[0]?.author || 'Multiple Authors',
                 folder: selectedItems[0]?.folder || 'Volumes',
@@ -3243,7 +3265,7 @@
                 const baseName = file.name.replace(/\.[^/.]+$/, "");
                 const detected = parseAudioFilenameForTitleAuthor(file.name);
                 const newItem = {
-                    id: 'item_' + Date.now() + Math.random().toString(36).substr(2, 5),
+                    id: generateItemId('item'),
                     title: detected.title || baseName,
                     author: detected.author || (file.name.endsWith('.m4b') ? 'Audiobook' : 'Local Import'),
                     url: url,
@@ -3343,7 +3365,7 @@
             if (!urlInput) return;
 
             const newItem = {
-                id: 'url_' + Date.now() + Math.random().toString(36).substr(2, 5),
+                id: generateItemId('url'),
                 title: titleInput || 'Linked Audio',
                 author: authorInput || 'Unknown Author',
                 url: urlInput,
@@ -3584,7 +3606,7 @@
 
                 parsedEpisodes.forEach(ep => {
                     const newItem = {
-                        id: 'rss_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                        id: generateItemId('rss'),
                         title: ep.title,
                         author: ep.author,
                         url: ep.url,
