@@ -641,7 +641,7 @@
             </div>
             <div class="pt-2 border-t border-gray-100">
                 <p class="text-xs font-semibold text-[#1B3F57]">Cover Images</p>
-                <p id="cover-storage-summary" class="text-[11px] text-gray-500 mb-1"></p>
+                <div id="cover-storage-summary" class="text-[11px] text-gray-500 mb-1 space-y-0.5"></div>
                 <div id="cover-storage-list" class="max-h-48 overflow-y-auto space-y-1 divide-y divide-gray-100"></div>
             </div>
         </div>
@@ -3670,27 +3670,57 @@
         // whoever is actually low on space can see what's using it and
         // choose for themselves what to remove, rather than the app
         // silently deciding for them.
+        // Sums every key/value currently in localStorage, in characters
+        // (which is what the quota is actually measured against - UTF-16
+        // code units, same unit .length already uses). This is the one
+        // real, ground-truth number for "how close is this app to its
+        // localStorage quota" - unlike navigator.storage.estimate()'s
+        // "browser storage overall" line elsewhere in this view, which
+        // covers IndexedDB/Cache Storage and does NOT include localStorage
+        // at all, and unlike summing only item covers below, which missed
+        // folder cover images (a separate, same-sized pool of the exact
+        // same kind of data) entirely.
+        function getLocalStorageTotalBytes() {
+            let total = 0;
+            try {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    total += key.length + (localStorage.getItem(key) || '').length;
+                }
+            } catch (e) {
+                console.warn('Could not measure localStorage usage:', e);
+            }
+            return total;
+        }
+
         function renderCoverStorageList() {
             const listEl = document.getElementById('cover-storage-list');
             const summaryEl = document.getElementById('cover-storage-summary');
             if (!listEl || !summaryEl) return;
 
-            const itemsWithCovers = appState.items.filter(i => i.cover).sort((a, b) => b.cover.length - a.cover.length);
-            if (itemsWithCovers.length === 0) {
-                summaryEl.innerText = 'No cover images stored.';
+            const entries = [
+                ...appState.items.filter(i => i.cover).map(i => ({ kind: 'item', id: i.id, label: i.title, size: i.cover.length })),
+                ...Object.keys(appState.folderCovers).filter(f => appState.folderCovers[f]).map(f => ({ kind: 'folder', id: f, label: `${f} (folder)`, size: appState.folderCovers[f].length })),
+            ].sort((a, b) => b.size - a.size);
+
+            const totalStorageLine = `<p class="font-semibold text-[#1B3F57]">${formatBytes(getLocalStorageTotalBytes())} total in this app's local storage right now</p>`;
+
+            if (entries.length === 0) {
+                summaryEl.innerHTML = totalStorageLine + '<p>No cover images stored.</p>';
                 listEl.innerHTML = '';
                 return;
             }
 
-            const totalBytes = itemsWithCovers.reduce((sum, i) => sum + i.cover.length, 0);
-            summaryEl.innerText = `~${formatBytes(totalBytes)} across ${itemsWithCovers.length} cover image${itemsWithCovers.length > 1 ? 's' : ''}.`;
-            listEl.innerHTML = itemsWithCovers.map(item => `
+            const totalCoverBytes = entries.reduce((sum, e) => sum + e.size, 0);
+            summaryEl.innerHTML = totalStorageLine +
+                `<p>~${formatBytes(totalCoverBytes)} across ${entries.length} cover image${entries.length > 1 ? 's' : ''} (items and folders).</p>`;
+            listEl.innerHTML = entries.map(entry => `
                 <div class="py-2 flex items-center justify-between gap-2">
                     <div class="min-w-0">
-                        <p class="text-xs font-semibold text-[#1B3F57] truncate">${item.title}</p>
-                        <p class="text-[11px] text-gray-500">~${formatBytes(item.cover.length)}</p>
+                        <p class="text-xs font-semibold text-[#1B3F57] truncate">${entry.label}</p>
+                        <p class="text-[11px] text-gray-500">~${formatBytes(entry.size)}</p>
                     </div>
-                    <button onclick="removeItemCoverManually('${item.id}')" class="shrink-0 px-3 py-1.5 bg-gray-100 text-red-600 hover:bg-red-50 rounded-lg text-[11px] font-semibold cursor-pointer">Remove Cover</button>
+                    <button onclick="${entry.kind === 'item' ? `removeItemCoverManually('${entry.id}')` : `removeFolderCoverManually('${entry.id}')`}" class="shrink-0 px-3 py-1.5 bg-gray-100 text-red-600 hover:bg-red-50 rounded-lg text-[11px] font-semibold cursor-pointer">Remove Cover</button>
                 </div>
             `).join('');
         }
@@ -3701,6 +3731,16 @@
             if (!confirm(`Remove the cover image for "${item.title}"? You can add a new one later from Edit.`)) return;
             item.cover = '';
             saveStateToCloud(item);
+            saveState();
+            renderLibrary();
+            renderCoverStorageList();
+        }
+
+        function removeFolderCoverManually(folderName) {
+            if (!appState.folderCovers[folderName]) return;
+            if (!confirm(`Remove the cover image for the "${folderName}" folder? You can add a new one later from that folder's Edit Folder screen.`)) return;
+            delete appState.folderCovers[folderName];
+            saveFolderToCloud(folderName);
             saveState();
             renderLibrary();
             renderCoverStorageList();
