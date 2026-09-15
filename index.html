@@ -1490,6 +1490,21 @@
         // clear whatever's already poisoning a save that keeps failing.
         const MAX_COVER_DATA_LENGTH = 300000;
 
+        // Target size for a NEWLY added cover (see resizeImageToDataUrl's
+        // call sites) - lowered from 500px/0.82 quality after end-user
+        // testing showed the real-world average (~86KB across 59 covers,
+        // at the old settings) adds up fast against a device's actual
+        // localStorage cap, which can be as tight as ~5MB. Covers are
+        // never displayed larger than the full-screen player's 256px
+        // artwork in this app, so 400px still comfortably covers that at
+        // over 1.5x pixel density; the quality step down (0.82 -> 0.7) is
+        // the bigger lever - JPEG size drops steeply in that range for a
+        // much smaller visible quality hit than shrinking dimensions
+        // further would. Existing covers already saved at the old, larger
+        // size are untouched - this only affects ones added from now on.
+        const COVER_RESIZE_MAX_DIM = 400;
+        const COVER_RESIZE_QUALITY = 0.7;
+
         // Different browsers/engines surface a full storage quota under
         // different names/codes - Chrome and Safari as a DOMException named
         // QuotaExceededError (code 22), older Firefox as
@@ -2320,7 +2335,7 @@
             // regardless of which was actually picked last.
             coverUploadToken++;
             const tokenAtPick = coverUploadToken;
-            resizeImageToDataUrl(file, 500, 0.82)
+            resizeImageToDataUrl(file, COVER_RESIZE_MAX_DIM, COVER_RESIZE_QUALITY)
                 .then(dataUrl => {
                     if (tokenAtPick !== coverUploadToken) return;
                     document.getElementById('bulk-cover-input').value = dataUrl;
@@ -2909,7 +2924,7 @@
             if (!file) return;
             coverUploadToken++;
             const tokenAtPick = coverUploadToken;
-            resizeImageToDataUrl(file, 500, 0.82)
+            resizeImageToDataUrl(file, COVER_RESIZE_MAX_DIM, COVER_RESIZE_QUALITY)
                 .then(dataUrl => {
                     if (tokenAtPick !== coverUploadToken) return;
                     document.getElementById('edit-folder-cover-input').value = dataUrl;
@@ -4318,7 +4333,7 @@
             if (!file) return;
             coverUploadToken++;
             const tokenAtPick = coverUploadToken;
-            resizeImageToDataUrl(file, 500, 0.82)
+            resizeImageToDataUrl(file, COVER_RESIZE_MAX_DIM, COVER_RESIZE_QUALITY)
                 .then(dataUrl => {
                     if (tokenAtPick !== coverUploadToken) return;
                     document.getElementById('folder-cover-input').value = dataUrl;
@@ -4368,7 +4383,7 @@
             // regardless of which was actually picked last.
             coverUploadToken++;
             const tokenAtPick = coverUploadToken;
-            resizeImageToDataUrl(file, 500, 0.82)
+            resizeImageToDataUrl(file, COVER_RESIZE_MAX_DIM, COVER_RESIZE_QUALITY)
                 .then(dataUrl => {
                     if (tokenAtPick !== coverUploadToken) return;
                     document.getElementById('edit-cover-input').value = dataUrl;
