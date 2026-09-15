@@ -843,24 +843,26 @@
         const audioEl = document.getElementById('main-audio-element');
         let audioCtx = null;
         let gainNode = null;
-        // Set once, here, before any track is ever loaded - NOT reactively
-        // inside setupAudioContext(). A MediaElementAudioSourceNode fed by a
-        // resource that was already fetched without CORS approval is spec'd
-        // to output permanent silence; crossOrigin only affects the *next*
-        // fetch, so setting it only when the user first requests a volume
-        // boost was routing whatever track was already mid-playback through
-        // Web Audio and muting it for good (no track loaded afterward could
-        // recover it either, since gainNode - once created - is used for
-        // every future volume change, including back down to 100%). Setting
-        // it here instead means every track, from the very first one, is
-        // always fetched under CORS approval, so connecting the graph later
-        // (still done lazily in setupAudioContext, to preserve background
-        // playback for the common unboosted case) is always safe. The
-        // tradeoff: a source whose server doesn't send CORS headers will now
-        // fail to load at all rather than merely being unboostable - a
-        // visible, per-track load error instead of a silent, session-wide,
-        // unrecoverable mute.
-        audioEl.crossOrigin = 'anonymous';
+        // crossOrigin is deliberately left UNSET here. It used to be forced
+        // on for every track from the very first one, specifically so a
+        // later volume boost could always safely route through Web Audio
+        // (see setupAudioContext) without risking the silent, unrecoverable
+        // mute a cross-origin resource fetched WITHOUT CORS approval
+        // produces once connected to it. But most real podcast/audiobook
+        // hosts - Anchor.fm/Spotify for Podcasters among them - don't send
+        // CORS headers at all, and forcing CORS mode on a server that
+        // doesn't support it doesn't just make it unboostable, it fails to
+        // load AT ALL. That traded a real, common, total-playback-failure
+        // for every listener of such a feed against a narrower, session-
+        // scoped edge case (boosting mid-playback, or on iOS touching the
+        // volume slider at all) that only some listeners would ever hit -
+        // backwards, since playback is this app's whole purpose and
+        // boosting past 100% is a secondary feature. crossOrigin is set
+        // reactively instead, only once Web Audio is actually about to be
+        // used (see setupAudioContext) - and even then, a load failure on
+        // a later track retries once without it rather than staying
+        // permanently blocked (see the shared onerror handling in
+        // playItem/playSubTrack).
 
         // Initialize Supabase Client
         try {
@@ -1863,6 +1865,18 @@
         function setupAudioContext() {
             if (audioCtx) return;
             try {
+                // Only takes effect on the *next* fetch, so this can't
+                // rescue whatever's already playing right now if that
+                // track's host doesn't support CORS (it may go silent once
+                // connected below - a narrower, session-scoped tradeoff,
+                // not the total playback failure forcing this on every
+                // track from the start used to cause). It does mean every
+                // track loaded from this point on is fetched under CORS
+                // approval; a load failure on one of those retries once
+                // without it (see withCorsRetry near playItem/playSubTrack)
+                // rather than staying permanently blocked for the rest of
+                // the session.
+                audioEl.crossOrigin = 'anonymous';
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
                 audioCtx = new AudioContext();
                 const source = audioCtx.createMediaElementSource(audioEl);
@@ -2578,6 +2592,31 @@
             `;
         }
 
+        // Shared by playItem/playSubTrack's onerror handlers. Once Web
+        // Audio has been engaged this session (see setupAudioContext),
+        // audioEl.crossOrigin stays 'anonymous' for every track loaded
+        // afterward - correct for the common case (the host supports CORS,
+        // so nothing changes), but a track whose host doesn't would
+        // otherwise fail to load outright for the rest of the session,
+        // just because an earlier, unrelated track was boosted. On a load
+        // error while crossOrigin is set, this clears it and retries the
+        // exact same src once before giving up - a track that would have
+        // played fine normally still does, just without the volume-boost
+        // safety net for that one track.
+        function withCorsRetry(giveUp) {
+            let retried = false;
+            return function onAudioError() {
+                if (!retried && audioEl.crossOrigin === 'anonymous') {
+                    retried = true;
+                    console.warn('Playback failed with CORS mode forced on - retrying this track without it.');
+                    audioEl.crossOrigin = null;
+                    audioEl.load();
+                    return;
+                }
+                giveUp();
+            };
+        }
+
         // opts.autoplay defaults to true. Pass { autoplay: false } to load a
         // saved position into the player (correct src/currentTime, correct
         // UI) without starting sound - used to re-prime playback after a
@@ -2620,11 +2659,11 @@
             audioEl.src = resolved.url;
             audioEl.playbackRate = appState.slothMode ? 0.5 : (item.speed || 1.0);
 
-            audioEl.onerror = () => {
+            audioEl.onerror = withCorsRetry(() => {
                 alert('Playback error: Local browser codec support for .m4b / .mp4 files may vary or the URL is blocked.');
                 appState.isPlaying = false;
                 updatePlayerUI();
-            };
+            });
 
             audioEl.onloadedmetadata = () => {
                 item.duration = audioEl.duration;
@@ -2664,11 +2703,11 @@
             audioEl.src = resolved.url;
             audioEl.playbackRate = appState.slothMode ? 0.5 : (volumeItem.speed || 1.0);
 
-            audioEl.onerror = () => {
+            audioEl.onerror = withCorsRetry(() => {
                 alert(`Playback error on "${sub.title}": Local browser codec support for .m4b / .mp4 files may vary or the URL is blocked.`);
                 appState.isPlaying = false;
                 updatePlayerUI();
-            };
+            });
 
             audioEl.onloadedmetadata = () => {
                 sub.duration = audioEl.duration;
