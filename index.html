@@ -530,6 +530,9 @@
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Folder Theme Color</label>
                 <input type="color" id="edit-folder-color-input" class="w-full h-10 border border-gray-300 rounded-xl px-2 py-1 cursor-pointer mb-3">
 
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Parent Folder</label>
+                <select id="edit-folder-parent-select" class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#3F8CB8] mb-3 bg-white"></select>
+
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Cover Image (Optional)</label>
                 <input type="url" id="edit-folder-cover-input" placeholder="https://..." class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] mb-2">
                 <div class="flex items-center gap-2">
@@ -2061,6 +2064,20 @@
             return folderChildrenOf(null);
         }
 
+        // Every folder nested anywhere under parentName, at any depth - used
+        // to keep the Edit Folder modal's parent picker from ever offering a
+        // choice that would make a folder its own ancestor.
+        function folderDescendantsOf(parentName) {
+            const result = [];
+            const stack = [...folderChildrenOf(parentName)];
+            while (stack.length) {
+                const f = stack.pop();
+                result.push(f);
+                stack.push(...folderChildrenOf(f));
+            }
+            return result;
+        }
+
         // How deeply nested a folder is (0 = top-level) - used only to
         // indent options in the plain <select> dropdowns (Edit Item, Add
         // URL, Bulk Edit) so a subfolder reads as nested there too, without
@@ -2244,6 +2261,32 @@
                 appState.selectedItemIds.push(itemId);
             }
             updateBulkBar();
+        }
+
+        // The one item list actually on screen at a time - the open folder's
+        // own items, or the root view's ungrouped items. Matches exactly
+        // what renderLibrary() renders as a flat item list, so "Select All"
+        // never reaches into subfolders the user hasn't drilled into.
+        function currentVisibleItemIds() {
+            if (appState.openFolder) {
+                return appState.items.filter(item => item.folder === appState.openFolder).map(item => item.id);
+            }
+            return appState.items.filter(item => !item.folder || !appState.folders.includes(item.folder)).map(item => item.id);
+        }
+
+        function selectAllVisibleItems() {
+            const ids = currentVisibleItemIds();
+            if (ids.length === 0) return;
+            const allSelected = ids.every(id => appState.selectedItemIds.includes(id));
+            if (allSelected) {
+                appState.selectedItemIds = appState.selectedItemIds.filter(id => !ids.includes(id));
+            } else {
+                const merged = new Set(appState.selectedItemIds);
+                ids.forEach(id => merged.add(id));
+                appState.selectedItemIds = Array.from(merged);
+            }
+            updateBulkBar();
+            renderLibrary();
         }
 
         function clearSelection() {
@@ -2539,6 +2582,7 @@
                 }
 
                 if (folderItems.length > 0) {
+                    container.appendChild(buildSelectAllBar(folderItems.map(item => item.id)));
                     const listEl = document.createElement('div');
                     listEl.className = 'bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-100';
                     listEl.innerHTML = folderItems.map(item => renderItemCard(item)).join('');
@@ -2562,11 +2606,25 @@
 
             const ungroupedItems = appState.items.filter(item => !item.folder || !appState.folders.includes(item.folder));
             if (ungroupedItems.length > 0) {
+                container.appendChild(buildSelectAllBar(ungroupedItems.map(item => item.id)));
                 const ungroupedEl = document.createElement('div');
                 ungroupedEl.className = 'bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-100';
                 ungroupedEl.innerHTML = ungroupedItems.map(item => renderItemCard(item)).join('');
                 container.appendChild(ungroupedEl);
             }
+        }
+
+        function buildSelectAllBar(ids) {
+            const allSelected = ids.length > 0 && ids.every(id => appState.selectedItemIds.includes(id));
+            const bar = document.createElement('div');
+            bar.className = 'flex items-center px-1';
+            bar.innerHTML = `
+                <label class="flex items-center gap-2 text-[11.5px] text-gray-500 cursor-pointer select-none">
+                    <input type="checkbox" ${allSelected ? 'checked' : ''} onclick="selectAllVisibleItems()" class="w-3.5 h-3.5 accent-[#3F8CB8] rounded cursor-pointer">
+                    Select All
+                </label>
+            `;
+            return bar;
         }
 
         function renderItemCard(item) {
@@ -2913,10 +2971,26 @@
             document.getElementById('edit-folder-original-name').value = folderName;
             document.getElementById('edit-folder-name-input').value = folderName;
             document.getElementById('edit-folder-color-input').value = appState.folderColors[folderName] || '#3F8CB8';
+            populateEditFolderParentSelect(folderName);
             document.getElementById('edit-folder-cover-input').value = appState.folderCovers[folderName] || '';
             document.getElementById('edit-folder-cover-file').value = '';
             document.getElementById('edit-folder-modal').classList.remove('hidden');
             document.getElementById('edit-folder-modal').classList.add('flex');
+        }
+
+        // Excludes the folder itself and every one of its own descendants,
+        // so this can never offer a choice that would make a folder its own
+        // ancestor.
+        function populateEditFolderParentSelect(folderName) {
+            const select = document.getElementById('edit-folder-parent-select');
+            if (!select) return;
+            const excluded = new Set([folderName, ...folderDescendantsOf(folderName)]);
+            select.innerHTML = '<option value="">(None - Top Level)</option>';
+            appState.folders.forEach(f => {
+                if (excluded.has(f)) return;
+                select.innerHTML += `<option value="${f}">${folderOptionLabel(f)}</option>`;
+            });
+            select.value = folderParentOf(folderName) || '';
         }
 
         function handleEditFolderCoverUpload(event) {
@@ -2988,6 +3062,15 @@
             appState.folderColors[newName] = color;
             if (cover) appState.folderCovers[newName] = cover;
             else delete appState.folderCovers[newName];
+
+            // Overrides whatever the rename block above carried over from
+            // the old name - the parent select (populated with the old
+            // parent as its starting value) is the source of truth for what
+            // the user actually chose.
+            const parentSelect = document.getElementById('edit-folder-parent-select');
+            const newParent = parentSelect ? parentSelect.value : '';
+            if (newParent) appState.folderParents[newName] = newParent;
+            else delete appState.folderParents[newName];
 
             saveState();
             if (wasRenamed) {
@@ -3288,6 +3371,12 @@
             // or description, not an author - so it's excluded from ever
             // being guessed as one, rather than picked by default.
             const nonNameWords = new Set(['the', 'of', 'and', 'or', 'in', 'on', 'at', 'to', 'with', 'from']);
+            // Roman-numeral name suffixes ("Robert Downey III", "Henry IV")
+            // are legitimately all-uppercase - without this carve-out
+            // they'd otherwise be indistinguishable from an acronym/label
+            // like "USA" or "BBC" and wrongly disqualify an otherwise
+            // plausible name.
+            const nameSuffixNumerals = new Set(['ii', 'iii', 'iv', 'v', 'vi']);
             const plausibleAuthor = (s) => {
                 const words = s.trim().split(/\s+/).filter(Boolean);
                 if (words.length < 1 || words.length > 4) return false;
@@ -3297,16 +3386,32 @@
                 // "J.R.R." are ALSO all-uppercase once periods are folded
                 // in, and those are clearly part of a real name, so periods
                 // must break the run rather than being ignored by it.
-                if (words.some(w => /^[A-Z]{2,}$/.test(w))) return false;
+                if (words.some(w => /^[A-Z]{2,}$/.test(w) && !nameSuffixNumerals.has(w.toLowerCase()))) return false;
                 if (words.some(w => nonNameWords.has(w.toLowerCase()))) return false;
                 return true;
+            };
+
+            // Edition/format qualifiers ("(Unabridged)", "[Audiobook]",
+            // "(Full Cast Recording)"...) are metadata a rip's filename
+            // often carries, not part of the actual title - stripped from
+            // whichever candidate title ends up returned below, so they
+            // never leak into a field the user has to clean up by hand.
+            const editionQualifierRe = /\s*[\(\[]\s*(?:unabridged|abridged|audiobook|full\s*cast(?:\s*recording)?|dramatized|dramatised)\s*[\)\]]\s*$/i;
+            const cleanTitle = (t) => {
+                let result = t.trim();
+                let prev;
+                do {
+                    prev = result;
+                    result = result.replace(editionQualifierRe, '').trim();
+                } while (result !== prev);
+                return result;
             };
 
             // "<code/track> - <Author> - <Title>": the exact shape of this
             // library's own multi-part filenames.
             const dashParts = name.split(/\s+[-–—]\s+/).map(s => s.trim()).filter(Boolean);
             if (dashParts.length >= 3 && plausibleAuthor(dashParts[1])) {
-                return { title: dashParts.slice(2).join(' - '), author: dashParts[1] };
+                return { title: cleanTitle(dashParts.slice(2).join(' - ')), author: dashParts[1] };
             }
 
             if (dashParts.length === 2) {
@@ -3314,32 +3419,45 @@
                 const firstPlausible = plausibleAuthor(first);
                 const secondPlausible = plausibleAuthor(second);
 
-                if (firstPlausible && !secondPlausible) return { title: second, author: first };
-                if (secondPlausible && !firstPlausible) return { title: first, author: second };
+                if (firstPlausible && !secondPlausible) return { title: cleanTitle(second), author: first };
+                if (secondPlausible && !firstPlausible) return { title: cleanTitle(first), author: second };
                 if (firstPlausible && secondPlausible) {
                     // Both are name-shaped - a segment starting with an
                     // article ("The", "A", "An") is a strong tell it's
                     // actually the title, not a name.
-                    if (startsLikeTitle(first)) return { title: first, author: second };
-                    if (startsLikeTitle(second)) return { title: second, author: first };
+                    if (startsLikeTitle(first)) return { title: cleanTitle(first), author: second };
+                    if (startsLikeTitle(second)) return { title: cleanTitle(second), author: first };
                     // Truly ambiguous - default to the single most common
                     // convention for ripped audiobooks/podcasts.
-                    return { title: second, author: first };
+                    return { title: cleanTitle(second), author: first };
                 }
                 // Neither side looks like a plausible author name - don't
                 // guess one; fall through and keep the dash-joined name
                 // intact as the title below.
             }
 
+            // "<Title> by <Author>" - the second most common convention
+            // after "<Author> - <Title>", especially for public-domain
+            // audiobook rips (e.g. "Pride and Prejudice by Jane Austen").
+            // Only tried when the filename has no dash-separated parts at
+            // all, so it can never compete with the dash-based logic above -
+            // it purely fills the gap that logic otherwise leaves empty.
+            if (dashParts.length === 1) {
+                const byMatch = name.match(/^(.+?)\s+by\s+([^,;:]+?)$/i);
+                if (byMatch && plausibleAuthor(byMatch[2])) {
+                    return { title: cleanTitle(byMatch[1]), author: byMatch[2].trim() };
+                }
+            }
+
             // "Title (Author)" / "Title [Author]"
             const bracketMatch = name.match(/^(.+?)\s*[\(\[]([^)\]]+)[\)\]]\s*$/);
             if (bracketMatch && plausibleAuthor(bracketMatch[2])) {
-                return { title: bracketMatch[1].trim(), author: bracketMatch[2].trim() };
+                return { title: cleanTitle(bracketMatch[1]), author: bracketMatch[2].trim() };
             }
 
             // Nothing matched confidently - use the cleaned-up name as the
             // title and leave author for the user to fill in.
-            return { title: name, author: '' };
+            return { title: cleanTitle(name), author: '' };
         }
 
         // --- Local file storage (IndexedDB) --------------------------------
