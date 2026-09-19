@@ -3164,6 +3164,23 @@
                 return;
             }
             if (audioEl.paused) {
+                // This is exactly what the lock screen / media notification's
+                // Play button calls (see setupMediaSession's 'play' handler)
+                // - and locking the screen or backgrounding the app is
+                // routinely what suspends the AudioContext in the first
+                // place, once Web Audio has been engaged (see
+                // setupAudioContext's comment on losing iOS's native
+                // background-audio allowance the moment that happens).
+                // Without resuming it first, audioEl.play() still succeeds
+                // and isPlaying still flips true - the lock screen shows
+                // "playing" - but no sound actually reaches speakers because
+                // the Web Audio graph downstream of the element is still
+                // suspended. playItem() already resumes it when starting a
+                // track fresh; this is the same guard for resuming a paused
+                // one.
+                if (audioCtx && audioCtx.state === 'suspended') {
+                    audioCtx.resume().catch(e => console.warn('AudioContext resume failed:', e));
+                }
                 audioEl.play();
                 appState.isPlaying = true;
             } else {
@@ -3274,6 +3291,22 @@
                 if (document.getElementById('queue-modal').classList.contains('flex')) renderQueueList();
                 playItem(nextId);
                 return;
+            }
+            // No explicit queue - if what just finished belongs to a folder,
+            // keep going with whatever's next in that same folder (in the
+            // same order shown in the UI, which is also exactly what
+            // drag-to-reorder and Sort by Date both write straight into
+            // appState.items) instead of just stopping - the way a
+            // podcast/audiobook app is expected to move between
+            // episodes/chapters of the same show.
+            if (currentItem && currentItem.folder) {
+                const folderItems = appState.items.filter(i => i.folder === currentItem.folder);
+                const idx = folderItems.findIndex(i => i.id === currentItem.id);
+                if (idx >= 0 && idx + 1 < folderItems.length) {
+                    saveState();
+                    playItem(folderItems[idx + 1].id);
+                    return;
+                }
             }
             appState.isPlaying = false;
             updatePlayerUI();
