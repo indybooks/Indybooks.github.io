@@ -943,28 +943,46 @@
             }
             if (!data) return;
 
-            const cloudItems = data.map(item => ({
-                id: item.id,
-                title: item.title,
-                author: item.author || '',
-                url: item.audio_url,
-                storagePath: item.storage_path || null,
-                // A row with a storage_path is a "local-type" item (its
-                // audio lives in Storage/IndexedDB, not at a direct URL) on
-                // every device, not just the one that uploaded it -
-                // playItem() resolves the actual bytes per-device (its own
-                // IndexedDB first, then a cloud download) regardless of
-                // this flag.
-                local: !!item.storage_path,
-                folder: item.folder || '',
-                cover: item.cover_url || '',
-                tags: item.tags || [],
-                currentTime: item.current_time || 0,
-                duration: item.duration || 0,
-                speed: item.speed || 1.0,
-                pubDate: item.pub_date || 0,
-                bookmarks: item.bookmarks ? item.bookmarks.map(b => ({ time: b.time, title: b.formatted_time || `Bookmark at ${formatTime(b.time)}` })) : []
-            }));
+            const cloudItems = data.map(item => {
+                const localMatch = localSnapshot.find(i => i.id === item.id);
+                // description was added to media_items after this table
+                // may have already existed live - a row fetched against an
+                // un-migrated table simply won't have the column at all
+                // (reads back as undefined here), which is different from
+                // the column existing with a genuinely empty value ('',
+                // meaning "cleared on purpose"). Treating "column missing"
+                // the same as "cleared" is exactly the bug that used to
+                // wipe out folder color/cover/parent on an un-migrated
+                // table - same fix here: only trust the cloud value once
+                // the column actually exists, otherwise keep whatever this
+                // device already has until the next successful push.
+                const description = item.description !== undefined
+                    ? (item.description || '')
+                    : ((localMatch && localMatch.description) || '');
+                return {
+                    id: item.id,
+                    title: item.title,
+                    author: item.author || '',
+                    url: item.audio_url,
+                    storagePath: item.storage_path || null,
+                    // A row with a storage_path is a "local-type" item (its
+                    // audio lives in Storage/IndexedDB, not at a direct URL) on
+                    // every device, not just the one that uploaded it -
+                    // playItem() resolves the actual bytes per-device (its own
+                    // IndexedDB first, then a cloud download) regardless of
+                    // this flag.
+                    local: !!item.storage_path,
+                    folder: item.folder || '',
+                    cover: item.cover_url || '',
+                    description,
+                    tags: item.tags || [],
+                    currentTime: item.current_time || 0,
+                    duration: item.duration || 0,
+                    speed: item.speed || 1.0,
+                    pubDate: item.pub_date || 0,
+                    bookmarks: item.bookmarks ? item.bookmarks.map(b => ({ time: b.time, title: b.formatted_time || `Bookmark at ${formatTime(b.time)}` })) : []
+                };
+            });
 
             // Merge, never replace wholesale: this used to overwrite
             // appState.items outright, which meant anything only on this
@@ -995,14 +1013,6 @@
                 // state this device already fixed.
                 if (localMatch && localMatch.subTracks) {
                     result = { ...result, subTracks: localMatch.subTracks, currentSubTrackIndex: localMatch.currentSubTrackIndex };
-                }
-                // description isn't in the media_items schema either (no
-                // column for it, same as subTracks above) - carry over
-                // whatever this device already has so a sync doesn't
-                // silently blank out an RSS-pulled or manually-entered
-                // description.
-                if (localMatch && localMatch.description) {
-                    result = { ...result, description: localMatch.description };
                 }
                 return result;
             });
@@ -1124,6 +1134,7 @@
                 audio_url: item.storagePath ? '' : (item.url || ''),
                 storage_path: item.storagePath || null,
                 cover_url: item.cover,
+                description: item.description || '',
                 folder: item.folder,
                 // Recomputed fresh on every save from the item's actual
                 // current position among its own folder-mates in
@@ -4459,10 +4470,6 @@
                         cover: ep.cover,
                         pubDate: ep.pubDate || 0,
                         tags: ['podcast'],
-                        // Local-only field, same as subTracks - there's no
-                        // column for it in media_items, and fetchUserLibrary's
-                        // merge carries it over from local state on every
-                        // sync so it never gets wiped by a sync round-trip.
                         description: ep.description || '',
                         currentTime: 0,
                         duration: 0,

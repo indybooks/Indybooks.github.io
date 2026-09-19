@@ -50,6 +50,10 @@ create table if not exists public.media_items (
   -- Set when the audio lives in Supabase Storage instead of at a public URL.
   storage_path  text,
   cover_url     text default '',
+  -- Episode/show notes - pulled in automatically from an RSS feed's
+  -- <description> when available, or entered/edited by hand. Deliberately
+  -- plain text (HTML is stripped client-side before this is ever set).
+  description   text default '',
   folder        text default '',
   -- Position among the other items sharing the same folder (lower sorts
   -- first). Without this, every cloud sync pulled rows back in whatever
