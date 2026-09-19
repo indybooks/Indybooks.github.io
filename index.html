@@ -1523,6 +1523,53 @@
             );
         }
 
+        // Set whenever saveState() hits a real quota error, cleared the
+        // moment a save actually succeeds again. A save that keeps failing
+        // never updates what's actually sitting in localStorage - so
+        // getLocalStorageTotalBytes() (which only reads what's already
+        // persisted) keeps reporting the last-successful, smaller total
+        // forever, making the app look like it has plenty of headroom right
+        // up until the next attempt fails the exact same way. This flag is
+        // what lets Manage Storage show the real, current picture instead.
+        let lastSaveFailedDueToQuota = false;
+
+        // The single largest cover currently in memory (item or folder) -
+        // used to name a specific, actionable culprit in the quota-error
+        // alert and in Manage Storage, rather than a generic "cover images
+        // are the most common cause" that leaves the user hunting through
+        // every item by hand. Deliberately reads live appState, not
+        // localStorage - the whole point is to find what's about to be
+        // saved (or already failing to save), not what was last persisted.
+        function findLargestCoverInMemory() {
+            let best = null;
+            appState.items.forEach(item => {
+                if (item.cover && (!best || item.cover.length > best.size)) {
+                    best = { label: item.title, size: item.cover.length };
+                }
+            });
+            Object.keys(appState.folderCovers).forEach(name => {
+                const cover = appState.folderCovers[name];
+                if (cover && (!best || cover.length > best.size)) {
+                    best = { label: `the "${name}" folder`, size: cover.length };
+                }
+            });
+            return best;
+        }
+
+        // What persistCoreState() is actually about to attempt to write,
+        // computed straight from live appState rather than localStorage -
+        // this is the number that predicts whether the NEXT save will
+        // succeed, unlike getLocalStorageTotalBytes() which can only ever
+        // describe the last save that already worked.
+        function estimateLibraryStateBytes() {
+            return JSON.stringify(appState.items).length +
+                JSON.stringify(appState.folders).length +
+                JSON.stringify(appState.folderColors).length +
+                JSON.stringify(appState.folderCovers).length +
+                JSON.stringify(appState.folderParents).length +
+                JSON.stringify(appState.queue).length;
+        }
+
         let lastQuotaAlertAt = 0;
         // A single oversized item makes EVERY future saveState() call fail
         // identically - including the ~4x/second ones onAudioTimeUpdate
@@ -1662,13 +1709,30 @@
                 // -> Manage Storage, which lists cover images by size with
                 // a manual Remove Cover button) is the user's call, not
                 // this function's.
+                lastSaveFailedDueToQuota = true;
+
+                // Once a save starts failing this way, it fails identically
+                // forever until something changes - Settings -> Manage
+                // Storage's "currently saved" figure describes the LAST
+                // successful save, which stops updating the instant this
+                // starts, so it can look reassuringly small for as long as
+                // the problem persists. Naming the single largest cover
+                // right now (read from live memory, not from that stale
+                // persisted total) points at an actual, actionable culprit
+                // instead of leaving the user to guess which of many items
+                // to check.
+                const culprit = findLargestCoverInMemory();
+                const culpritLine = culprit
+                    ? ` Right now the largest cover image in your library is on ${culprit.label.startsWith('the "') ? culprit.label : `"${culprit.label}"`} (~${formatBytes(culprit.size)}) - that's the most likely place to start.`
+                    : '';
                 showQuotaAlert(
-                    "Your browser's local storage is full, so this couldn't be saved. Cover images are the most common cause. " +
+                    "Your browser's local storage is full, so this couldn't be saved. Cover images are the most common cause." + culpritLine + " " +
                     "Go to Settings → Manage Storage to see which covers are using the most space and remove some by hand, or delete a few items, then try again."
                 );
                 return false;
             }
 
+            lastSaveFailedDueToQuota = false;
             finishSuccessfulSave();
             return true;
         }
@@ -3838,14 +3902,34 @@
 
             const totalStorageLine = `<p class="font-semibold text-[#1B3F57]">${formatBytes(getLocalStorageTotalBytes())} total in this app's local storage right now</p>`;
 
+            // getLocalStorageTotalBytes() above can only ever describe the
+            // last save that actually succeeded - once a save starts
+            // failing on a full quota, that figure freezes and stops
+            // reflecting reality, so it can read as "plenty of room" for as
+            // long as the problem lasts. This banner only shows up while
+            // that's actively happening, and points at the specific number
+            // (and cover) that's really blocking things.
+            let failureBanner = '';
+            if (lastSaveFailedDueToQuota) {
+                const pending = estimateLibraryStateBytes();
+                const culprit = findLargestCoverInMemory();
+                failureBanner = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-2.5 mb-2">
+                        <p class="text-red-700 font-semibold">Your last save failed - storage is full.</p>
+                        <p class="text-red-600">Your library currently needs about ${formatBytes(pending)}, but the figure below only reflects the last save that actually worked - it will look smaller than reality until this is fixed.</p>
+                        ${culprit ? `<p class="text-red-600">Largest cover right now: ${culprit.label.startsWith('the "') ? culprit.label : `"${culprit.label}"`} (~${formatBytes(culprit.size)}).</p>` : ''}
+                    </div>
+                `;
+            }
+
             if (entries.length === 0) {
-                summaryEl.innerHTML = totalStorageLine + '<p>No cover images stored.</p>';
+                summaryEl.innerHTML = failureBanner + totalStorageLine + '<p>No cover images stored.</p>';
                 listEl.innerHTML = '';
                 return;
             }
 
             const totalCoverBytes = entries.reduce((sum, e) => sum + e.size, 0);
-            summaryEl.innerHTML = totalStorageLine +
+            summaryEl.innerHTML = failureBanner + totalStorageLine +
                 `<p>~${formatBytes(totalCoverBytes)} across ${entries.length} cover image${entries.length > 1 ? 's' : ''} (items and folders).</p>`;
             listEl.innerHTML = entries.map(entry => `
                 <div class="py-2 flex items-center justify-between gap-2">
