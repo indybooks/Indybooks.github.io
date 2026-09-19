@@ -583,6 +583,14 @@
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Tags (comma separated)</label>
                 <input type="text" id="edit-tags-input" placeholder="audiobook, mystery, sci-fi" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8]">
             </div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Episode Description (optional)</label>
+                <textarea id="edit-description-input" rows="4" placeholder="Pulled in automatically from RSS feeds when available - add or edit your own here." class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8] resize-y"></textarea>
+            </div>
+            <div id="edit-item-tracklist-section" class="hidden">
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Tracks in This Volume</label>
+                <ol id="edit-item-tracklist" class="border border-gray-200 rounded-xl divide-y divide-gray-100 max-h-40 overflow-y-auto text-xs text-[#1B3F57]"></ol>
+            </div>
             <div class="flex justify-end space-x-2 pt-2">
                 <button onclick="closeModals()" class="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer">Cancel</button>
                 <button onclick="saveItemEdits()" class="px-5 py-2 text-xs font-semibold bg-[#3F8CB8] text-white rounded-xl shadow hover:bg-[#1B3F57] cursor-pointer">Save Changes</button>
@@ -987,6 +995,14 @@
                 // state this device already fixed.
                 if (localMatch && localMatch.subTracks) {
                     result = { ...result, subTracks: localMatch.subTracks, currentSubTrackIndex: localMatch.currentSubTrackIndex };
+                }
+                // description isn't in the media_items schema either (no
+                // column for it, same as subTracks above) - carry over
+                // whatever this device already has so a sync doesn't
+                // silently blank out an RSS-pulled or manually-entered
+                // description.
+                if (localMatch && localMatch.description) {
+                    result = { ...result, description: localMatch.description };
                 }
                 return result;
             });
@@ -2534,7 +2550,13 @@
                 id: generateItemId('vol'),
                 title: volTitle,
                 author: selectedItems[0]?.author || 'Multiple Authors',
-                folder: selectedItems[0]?.folder || 'Volumes',
+                // Keeps whatever folder (or lack of one) the source items
+                // were already in - end-user testing found the app forcing
+                // every combined volume into an auto-created "Volumes"
+                // folder surprising and unwanted, especially when combining
+                // items that already lived together in a folder of their
+                // own.
+                folder: selectedItems[0]?.folder || '',
                 cover: selectedItems[0]?.cover || '',
                 tags: ['volume', 'combined'],
                 subTracks,
@@ -2547,12 +2569,6 @@
                 speed: 1.0,
                 bookmarks: []
             };
-
-            if (!appState.folders.includes('Volumes')) {
-                appState.folders.push('Volumes');
-                appState.folderColors['Volumes'] = '#FF7BAC';
-                saveFolderToCloud('Volumes');
-            }
 
             appState.items.push(combinedItem);
             saveStateToCloud(combinedItem);
@@ -2710,7 +2726,7 @@
                         </div>
                         <div class="min-w-0 flex-1">
                             <h4 class="text-xs font-bold text-[#1B3F57] truncate">${item.title}</h4>
-                            <p class="text-[12.5px] text-gray-600 truncate">${item.author || 'Unknown Author'}</p>
+                            <p class="text-[12.5px] text-gray-600 truncate">${item.author || 'Unknown Author'}${item.subTracks && item.subTracks.length > 0 ? ` • ${item.subTracks.length} tracks` : ''}</p>
                             <div class="flex items-center space-x-2 mt-1">
                                 <div class="flex-1 bg-gray-200 h-1.5 rounded-full overflow-hidden max-w-[120px]">
                                     <div class="bg-[#3F8CB8] h-full" style="width: ${pct}%"></div>
@@ -4171,6 +4187,31 @@
             closeModals();
         }
 
+        // Turns an RSS <description>/<itunes:summary> value (which can be,
+        // and often is, HTML - podcast hosts routinely wrap it in <p>/<a>/
+        // <br> tags or even full markup) into plain text worth storing on
+        // an item. Deliberately regex-only rather than parsing it through
+        // a real (even off-document) DOM element: setting untrusted HTML as
+        // .innerHTML starts loading/executing anything it contains (image
+        // fetches, onerror handlers, etc.) regardless of whether the
+        // element is ever attached to the page, which would turn a
+        // malicious or compromised feed's description into script
+        // execution. This never builds any live element from the input at
+        // all.
+        function stripHtmlToText(html) {
+            if (!html) return '';
+            let text = html
+                .replace(/<style[\s\S]*?<\/style>/gi, '')
+                .replace(/<script[\s\S]*?<\/script>/gi, '')
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<\/(p|div)>/gi, '\n\n')
+                .replace(/<[^>]+>/g, '');
+            const entities = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&apos;': "'", '&nbsp;': ' ' };
+            text = text.replace(/&amp;|&lt;|&gt;|&quot;|&#39;|&apos;|&nbsp;/g, m => entities[m]);
+            text = text.replace(/&#(\d+);/g, (m, code) => String.fromCharCode(code));
+            return text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+        }
+
         async function ingestRssFeed() {
             const urlInput = document.getElementById('rss-url-input').value.trim();
             const btn = document.getElementById('import-feed-btn');
@@ -4326,6 +4367,17 @@
                         const dateText = item.querySelector('pubDate, published, updated')?.textContent?.trim();
                         const parsedDate = dateText ? Date.parse(dateText) : NaN;
                         const pubDate = Number.isNaN(parsedDate) ? 0 : parsedDate;
+                        // itunes:summary is usually the shorter, plain-text
+                        // synopsis; <description>/<content:encoded> is
+                        // typically the full (often HTML) show notes. Prefer
+                        // whichever one is actually present and non-empty
+                        // rather than always picking the same tag, since
+                        // real feeds are inconsistent about which they set.
+                        const rawDescription = item.querySelector('description')?.textContent?.trim()
+                            || item.querySelector('*|encoded')?.textContent?.trim()
+                            || item.querySelector('*|summary')?.textContent?.trim()
+                            || '';
+                        const description = stripHtmlToText(rawDescription);
 
                         if (audioUrl) {
                             parsedEpisodes.push({
@@ -4333,7 +4385,8 @@
                                 author: channelAuthor,
                                 url: audioUrl,
                                 cover: epCover,
-                                pubDate: pubDate
+                                pubDate: pubDate,
+                                description: description
                             });
                         }
                     });
@@ -4367,7 +4420,8 @@
                                             author: channelAuthor,
                                             url: audioUrl,
                                             cover: item.thumbnail || channelCover,
-                                            pubDate: Number.isNaN(parsedDate) ? 0 : parsedDate
+                                            pubDate: Number.isNaN(parsedDate) ? 0 : parsedDate,
+                                            description: stripHtmlToText(item.description || item.content || '')
                                         });
                                     }
                                 });
@@ -4405,6 +4459,11 @@
                         cover: ep.cover,
                         pubDate: ep.pubDate || 0,
                         tags: ['podcast'],
+                        // Local-only field, same as subTracks - there's no
+                        // column for it in media_items, and fetchUserLibrary's
+                        // merge carries it over from local state on every
+                        // sync so it never gets wiped by a sync round-trip.
+                        description: ep.description || '',
                         currentTime: 0,
                         duration: 0,
                         speed: 1.0,
@@ -4605,6 +4664,23 @@
             document.getElementById('edit-cover-file').value = '';
             document.getElementById('edit-folder-select').value = item.folder || '';
             document.getElementById('edit-tags-input').value = item.tags ? item.tags.join(', ') : '';
+            document.getElementById('edit-description-input').value = item.description || '';
+
+            const tracklistSection = document.getElementById('edit-item-tracklist-section');
+            const tracklist = document.getElementById('edit-item-tracklist');
+            if (item.subTracks && item.subTracks.length > 0) {
+                tracklistSection.classList.remove('hidden');
+                tracklist.innerHTML = item.subTracks.map((sub, i) => `
+                    <li class="px-3 py-1.5 flex items-center gap-2">
+                        <span class="text-gray-400 shrink-0">${i + 1}.</span>
+                        <span class="truncate">${sub.title}</span>
+                    </li>
+                `).join('');
+            } else {
+                tracklistSection.classList.add('hidden');
+                tracklist.innerHTML = '';
+            }
+
             document.getElementById('edit-item-modal').classList.remove('hidden');
             document.getElementById('edit-item-modal').classList.add('flex');
         }
@@ -4668,6 +4744,7 @@
             item.folder = document.getElementById('edit-folder-select').value;
             const rawTags = document.getElementById('edit-tags-input').value;
             item.tags = rawTags ? rawTags.split(',').map(t => t.trim()).filter(Boolean) : [];
+            item.description = document.getElementById('edit-description-input').value.trim();
             saveStateToCloud(item);
             saveState();
             renderLibrary();
