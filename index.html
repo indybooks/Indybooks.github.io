@@ -2895,14 +2895,36 @@
             volumeItem.duration = volumeItem.subTracks.reduce((sum, s) => sum + (s.duration || 0), 0);
         }
 
+        // A data: URI cover always sniffs as its real MIME type; a plain
+        // URL falls back to guessing by extension, then JPEG - previously
+        // hardcoded to 'image/jpeg' unconditionally, which mislabeled any
+        // PNG/WEBP/GIF cover (RSS-provided feed art very often is PNG).
+        // Some WebKit versions are known to reject MediaMetadata artwork
+        // outright when the declared type doesn't match the actual image,
+        // which is exactly the kind of thing that could quietly break the
+        // whole Now Playing widget instead of just showing no artwork.
+        function guessImageMimeType(src) {
+            const dataMatch = /^data:([^;,]+)/.exec(src || '');
+            if (dataMatch) return dataMatch[1];
+            if (/\.png(\?|#|$)/i.test(src)) return 'image/png';
+            if (/\.webp(\?|#|$)/i.test(src)) return 'image/webp';
+            if (/\.gif(\?|#|$)/i.test(src)) return 'image/gif';
+            return 'image/jpeg';
+        }
+
         function setupMediaSession(item) {
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.metadata = new MediaMetadata({
-                    title: item.title,
-                    artist: item.author || 'IndyBooks',
-                    album: item.folder || 'Podcast & Audiobook Hub',
-                    artwork: item.cover ? [{ src: item.cover, sizes: '512x512', type: 'image/jpeg' }] : []
-                });
+            if (!('mediaSession' in navigator)) return;
+            // Action handlers + playbackState are what actually let the lock
+            // screen drive playback - registered first and independently of
+            // metadata below, wrapped in their own try/catch, so a bad
+            // artwork string or an unsupported action name on some
+            // browser/OS version can never take the working controls down
+            // with it. This used to be one unguarded block where a throw
+            // from ANY line (metadata included, since it ran first) silently
+            // aborted everything after it - including play/pause
+            // registration - with nothing surfaced anywhere to explain why
+            // the lock screen stopped responding.
+            try {
                 navigator.mediaSession.setActionHandler('play', () => togglePlayPause());
                 navigator.mediaSession.setActionHandler('pause', () => togglePlayPause());
                 navigator.mediaSession.setActionHandler('seekbackward', () => skipTime(-15));
@@ -2922,6 +2944,18 @@
                 // until the user opened the app and pressed Play by hand
                 // at least once.
                 navigator.mediaSession.playbackState = appState.isPlaying ? 'playing' : 'paused';
+            } catch (e) {
+                console.warn('Failed to wire up MediaSession action handlers - lock screen controls may not work:', e);
+            }
+            try {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: item.title,
+                    artist: item.author || 'IndyBooks',
+                    album: item.folder || 'Podcast & Audiobook Hub',
+                    artwork: item.cover ? [{ src: item.cover, sizes: '512x512', type: guessImageMimeType(item.cover) }] : []
+                });
+            } catch (e) {
+                console.warn('Failed to set MediaSession metadata (lock screen title/artwork may be missing):', e);
             }
         }
 
