@@ -3257,7 +3257,25 @@
                 if (audioCtx && audioCtx.state === 'suspended') {
                     audioCtx.resume().catch(e => console.warn('AudioContext resume failed:', e));
                 }
-                audioEl.play();
+                // audioEl.play() returns a promise that can reject even with
+                // no AudioContext involved at all - a tab sitting paused in
+                // the background for a while (locked screen, another app in
+                // front) can have its browser-buffered/decoded audio data
+                // evicted to free memory. audioEl.src still looks set, but
+                // there's nothing left actually loaded to play, and play()
+                // rejects instead of producing sound. Left unhandled, this
+                // was a silent no-op: the rejection went nowhere, nothing
+                // reloaded, and the lock screen's Play tap looked like it
+                // did nothing at all (no icon flip, no audio) - exactly the
+                // failure mode reported here even with Web Audio never
+                // engaged. playItem() already does a full fresh
+                // load/resolve/resume cycle from the saved position, so
+                // falling back to it here reuses that instead of
+                // reimplementing a second, less battle-tested reload path.
+                audioEl.play().catch(err => {
+                    console.warn('audioEl.play() failed - reloading fresh from the saved position and retrying:', err);
+                    if (appState.currentId) playItem(appState.currentId, { autoplay: true });
+                });
                 appState.isPlaying = true;
             } else {
                 audioEl.pause();
