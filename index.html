@@ -3257,24 +3257,25 @@
                 if (audioCtx && audioCtx.state === 'suspended') {
                     audioCtx.resume().catch(e => console.warn('AudioContext resume failed:', e));
                 }
-                // audioEl.play() returns a promise that can reject even with
-                // no AudioContext involved at all - a tab sitting paused in
-                // the background for a while (locked screen, another app in
-                // front) can have its browser-buffered/decoded audio data
-                // evicted to free memory. audioEl.src still looks set, but
-                // there's nothing left actually loaded to play, and play()
-                // rejects instead of producing sound. Left unhandled, this
-                // was a silent no-op: the rejection went nowhere, nothing
-                // reloaded, and the lock screen's Play tap looked like it
-                // did nothing at all (no icon flip, no audio) - exactly the
-                // failure mode reported here even with Web Audio never
-                // engaged. playItem() already does a full fresh
-                // load/resolve/resume cycle from the saved position, so
-                // falling back to it here reuses that instead of
-                // reimplementing a second, less battle-tested reload path.
+                // audioEl.play() returns a promise that can reject. An
+                // earlier version of this fix reacted to that by falling
+                // back to a full playItem() reload (resolving the source
+                // fresh, possibly over the network, before calling play()
+                // again) - but iOS only grants "trusted" gesture status to
+                // a play() call made SYNCHRONOUSLY within the lock screen's
+                // own action-handler invocation. Retrying only after real
+                // async work is exactly what iOS's lock screen showing a
+                // multi-second freeze and then "not playing" looks like:
+                // the retried call runs outside that trusted window and
+                // gets rejected too, just slower. Reverted - this now only
+                // corrects the app's own UI/state back to "not playing"
+                // instead of leaving isPlaying=true for audio that never
+                // actually started, without attempting an async retry that
+                // can't realistically succeed from this call site anyway.
                 audioEl.play().catch(err => {
-                    console.warn('audioEl.play() failed - reloading fresh from the saved position and retrying:', err);
-                    if (appState.currentId) playItem(appState.currentId, { autoplay: true });
+                    console.warn('audioEl.play() failed:', err);
+                    appState.isPlaying = false;
+                    updatePlayerUI();
                 });
                 appState.isPlaying = true;
             } else {
