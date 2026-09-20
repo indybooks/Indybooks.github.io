@@ -2907,6 +2907,21 @@
                 navigator.mediaSession.setActionHandler('pause', () => togglePlayPause());
                 navigator.mediaSession.setActionHandler('seekbackward', () => skipTime(-15));
                 navigator.mediaSession.setActionHandler('seekforward', () => skipTime(30));
+                // playbackState defaults to 'none' until explicitly set, and
+                // browsers (iOS Safari in particular) treat 'none' as "no
+                // active session" - no interactive lock-screen/Now Playing
+                // widget at all, regardless of metadata being set. The
+                // native audioEl 'play'/'pause' listeners below keep this
+                // current once real playback happens, but that's not
+                // enough on its own: the app-launch re-prime call (loads
+                // the saved position with autoplay:false, specifically so
+                // reopening the app doesn't blast audio) never fires a
+                // native play/pause event, so without this line a cold
+                // launch left playbackState at 'none' forever - there was
+                // simply no working lock-screen control to tap Play on
+                // until the user opened the app and pressed Play by hand
+                // at least once.
+                navigator.mediaSession.playbackState = appState.isPlaying ? 'playing' : 'paused';
             }
         }
 
