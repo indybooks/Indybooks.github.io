@@ -2417,8 +2417,11 @@
                 // Only commit to a horizontal swipe once movement is clearly
                 // more horizontal than vertical - otherwise this would
                 // hijack an ordinary tap (checkbox, Queue/Edit buttons,
-                // tap-to-play) or a vertical scroll of the page.
-                if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+                // tap-to-play) or a vertical scroll of the page. 12px
+                // (rather than a hair-trigger few px) gives real-world
+                // finger jitter on a touchscreen room to not misread an
+                // ordinary tap as a tiny swipe.
+                if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
                 if (Math.abs(dy) > Math.abs(dx)) return;
                 itemSwipeState.moved = true;
                 itemSwipeState.foreground.style.transition = 'none';
@@ -2442,7 +2445,23 @@
             if (captured) { try { foreground.releasePointerCapture(event.pointerId); } catch (e) {} }
             itemSwipeState = null;
 
-            if (!moved) return; // an ordinary tap - let its own click handler run normally
+            if (!moved) {
+                // An ordinary tap. If this row was already swiped open, the
+                // tap's job is to dismiss that reveal - not also trigger
+                // whatever's underneath it (playing the item, etc.).
+                // Without this, an open row had no way to close again
+                // short of a precise reverse-swipe, which read as
+                // permanently stuck open. preventDefault() here suppresses
+                // the click that would otherwise still fire after this
+                // pointerup, the same way it already does mid-drag above.
+                if (foreground.dataset.swipeOffset && foreground.dataset.swipeOffset !== '0') {
+                    event.preventDefault();
+                    foreground.style.transition = 'transform 0.18s ease-out';
+                    foreground.style.transform = 'translateX(0px)';
+                    foreground.dataset.swipeOffset = '0';
+                }
+                return; // otherwise let its own click handler run normally
+            }
 
             foreground.style.transition = 'transform 0.18s ease-out';
             // Snap fully open past the halfway point, closed otherwise.
@@ -2956,6 +2975,15 @@
             }
             const item = appState.items.find(i => i.id === id);
             if (!item) return;
+
+            // Belt-and-suspenders against a swiped-open row getting stuck:
+            // if a swipe gesture is ever interrupted before reaching
+            // pointerup/pointercancel (easy on iOS, where a horizontal drag
+            // can get intercepted by a system gesture mid-flight), nothing
+            // else would ever close it. Playing an item - especially the
+            // one whose row someone keeps tapping - is as good a moment as
+            // any to guarantee no row is left open.
+            closeAllSwipedRows();
 
             appState.currentId = id;
             // Drives evictStaleLocalAudioCache()'s LRU ordering - which
