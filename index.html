@@ -222,13 +222,13 @@
                 <button id="sloth-mode-btn" onclick="toggleSlothMode()" title="Sloth Mode (0.5x Speed)" class="w-[41px] h-[41px] rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center transition cursor-pointer overflow-hidden">
                     <img src="sloth-icon.png" alt="Sloth Mode" class="w-8 h-8 object-contain">
                 </button>
-                <button onclick="skipTime(-15)" class="w-[41px] h-[41px] rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
+                <button onclick="skipTime(-appState.skipBackwardSeconds)" title="Skip back" class="w-[41px] h-[41px] rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
                     <i class="fa-solid fa-rotate-left text-xs"></i>
                 </button>
                 <button id="mini-play-btn" onclick="togglePlayPause()" class="w-[51px] h-[51px] rounded-full bg-[#FFB452] text-[#1B3F57] flex items-center justify-center shadow-lg hover:scale-105 transition cursor-pointer">
                     <i class="fa-solid fa-play text-sm ml-0.5"></i>
                 </button>
-                <button onclick="skipTime(30)" class="w-[41px] h-[41px] rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
+                <button onclick="skipTime(appState.skipForwardSeconds)" title="Skip forward" class="w-[41px] h-[41px] rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
                     <i class="fa-solid fa-rotate-right text-xs"></i>
                 </button>
             </div>
@@ -284,14 +284,20 @@
                     </div>
                     Sloth Mode
                 </button>
-                <button onclick="skipTime(-15)" class="w-[55px] h-[55px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer">
-                    <i class="fa-solid fa-rotate-left"></i>
+                <button onclick="skipTime(-appState.skipBackwardSeconds)" class="flex flex-col items-center gap-1 text-white cursor-pointer">
+                    <div class="w-[55px] h-[55px] rounded-full bg-white/10 hover:bg-white/20 transition flex items-center justify-center">
+                        <i class="fa-solid fa-rotate-left"></i>
+                    </div>
+                    <span id="skip-backward-label" class="text-[10.5px] text-[#FFDDA6]">15s</span>
                 </button>
                 <button id="modal-play-btn" onclick="togglePlayPause()" class="w-[74px] h-[74px] rounded-full bg-[#FFB452] text-[#1B3F57] flex items-center justify-center shadow-xl hover:scale-105 transition text-xl cursor-pointer">
                     <i class="fa-solid fa-play ml-1"></i>
                 </button>
-                <button onclick="skipTime(30)" class="w-[55px] h-[55px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer">
-                    <i class="fa-solid fa-rotate-right"></i>
+                <button onclick="skipTime(appState.skipForwardSeconds)" class="flex flex-col items-center gap-1 text-white cursor-pointer">
+                    <div class="w-[55px] h-[55px] rounded-full bg-white/10 hover:bg-white/20 transition flex items-center justify-center">
+                        <i class="fa-solid fa-rotate-right"></i>
+                    </div>
+                    <span id="skip-forward-label" class="text-[10.5px] text-[#FFDDA6]">30s</span>
                 </button>
                 <button onclick="addBookmark()" class="flex flex-col items-center text-xs text-[#FFDDA6] hover:text-white transition cursor-pointer">
                     <div class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center text-[#FFB452] mb-1">
@@ -301,19 +307,13 @@
                 </button>
             </div>
 
-            <!-- Independent Audio Volume Control -->
+            <!-- Speed / Sleep Timer Controls -->
             <div class="flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-md pt-2">
                 <div class="bg-white/10 rounded-xl px-4 py-2 flex items-center gap-3">
                     <span class="text-xs text-[#FFDDA6]">Speed:</span>
                     <button onclick="adjustSpeed(-0.1)" class="w-8 h-8 rounded-lg bg-white/10 text-white font-bold hover:bg-white/20 cursor-pointer">-</button>
                     <span id="speed-label" class="text-sm font-bold text-[#FFB452] w-10 text-center">1.0x</span>
                     <button onclick="adjustSpeed(0.1)" class="w-8 h-8 rounded-lg bg-white/10 text-white font-bold hover:bg-white/20 cursor-pointer">+</button>
-                </div>
-                <div class="bg-white/10 rounded-xl px-4 py-2 flex items-center gap-2">
-                    <i class="fa-solid fa-volume-low text-xs text-[#FFB452]"></i>
-                    <span class="text-xs text-[#FFDDA6]">Vol:</span>
-                    <input type="range" id="app-volume-slider" min="0" max="3" step="0.05" value="1" class="w-24 accent-[#FFB452] cursor-pointer" oninput="adjustAppVolume(this.value)">
-                    <span id="volume-label" class="text-xs text-white font-bold w-12 text-right">100%</span>
                 </div>
                 <button id="sleep-timer-toggle-btn" onclick="openSleepTimerModal()" class="bg-white/10 hover:bg-white/20 rounded-xl px-4 py-2.5 flex items-center gap-2 text-xs text-white cursor-pointer">
                     <i class="fa-solid fa-moon text-[#FFB452]"></i>
@@ -673,6 +673,16 @@
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Global End Trim (Seconds from End)</label>
                 <input type="number" id="global-end-trim" value="0" min="0" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8]">
             </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Skip Backward (Seconds)</label>
+                    <input type="number" id="skip-backward-input" value="15" min="1" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8]">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Skip Forward (Seconds)</label>
+                    <input type="number" id="skip-forward-input" value="30" min="1" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#3F8CB8]">
+                </div>
+            </div>
             <div class="pt-2 border-t border-gray-100 flex justify-between items-center">
                 <span class="text-xs text-gray-600 font-medium">Goodreads Integration</span>
                 <button onclick="openGoodreadsModal()" class="px-4 py-2 bg-[#FFDDA6] text-[#1B3F57] hover:bg-[#FFB452] rounded-xl text-xs font-semibold cursor-pointer">Configure</button>
@@ -823,6 +833,12 @@
             goodreadsUser: localStorage.getItem('indybooks_goodreads') || null,
             startTrim: parseInt(localStorage.getItem('indybooks_start_trim') || '0', 10),
             endTrim: parseInt(localStorage.getItem('indybooks_end_trim') || '0', 10),
+            // Independent skip amounts - forward and backward never had to
+            // match each other (a common preference is a short backward
+            // skip to re-hear something just missed, paired with a longer
+            // forward skip). Defaults match the previous hardcoded 15/30.
+            skipBackwardSeconds: parseInt(localStorage.getItem('indybooks_skip_backward') || '15', 10),
+            skipForwardSeconds: parseInt(localStorage.getItem('indybooks_skip_forward') || '30', 10),
             // Which item was playing used to be thrown away on every reload
             // even though each item's own currentTime was saved correctly -
             // so the app looked like it had forgotten the position, when
@@ -1640,6 +1656,8 @@
             localStorage.setItem('indybooks_queue', JSON.stringify(appState.queue));
             localStorage.setItem('indybooks_start_trim', appState.startTrim);
             localStorage.setItem('indybooks_end_trim', appState.endTrim);
+            localStorage.setItem('indybooks_skip_backward', appState.skipBackwardSeconds);
+            localStorage.setItem('indybooks_skip_forward', appState.skipForwardSeconds);
             if (appState.currentId) localStorage.setItem('indybooks_current_id', appState.currentId);
             else localStorage.removeItem('indybooks_current_id');
             if (appState.goodreadsUser) localStorage.setItem('indybooks_goodreads', appState.goodreadsUser);
@@ -1830,6 +1848,8 @@
             updateQueueBadge();
             document.getElementById('global-start-trim').value = appState.startTrim;
             document.getElementById('global-end-trim').value = appState.endTrim;
+            document.getElementById('skip-backward-input').value = appState.skipBackwardSeconds;
+            document.getElementById('skip-forward-input').value = appState.skipForwardSeconds;
             registerServiceWorker();
 
             // appState.currentId/currentTime survive a reload (they're read
@@ -1959,6 +1979,17 @@
         // saveState()/syncPlaybackProgress() are idempotent.
         window.addEventListener('pagehide', flushPlaybackProgress);
 
+        // Dormant for now: the in-app volume control (and its only caller,
+        // adjustAppVolume() below) was removed from the UI after end-user
+        // testing found it non-functional - kept here, unused, rather than
+        // deleted, since this took several rounds to get right for iOS's
+        // quirks (see the comments below) and the plan is to bring the
+        // control back later rather than rebuild this from scratch. Nothing
+        // currently calls setupAudioContext(), so audioCtx/gainNode stay
+        // null for the whole session - as a side effect, this also means
+        // the app no longer gives up iOS's native background-audio
+        // allowance on its own (see the paragraph below).
+        //
         // Routing the <audio> element through Web Audio (createMediaElementSource)
         // is a one-way trip: once connected, the element's sound only reaches
         // speakers via this graph. That's needed to push volume past
@@ -2260,6 +2291,11 @@
         function startItemDrag(id, event) {
             if (event.button !== undefined && event.button !== 0) return;
             event.preventDefault();
+            // The grip handle sits inside the same row that the swipe-to-
+            // delete gesture below listens on - without this, pressing the
+            // handle would also kick off a swipe-open attempt on the same
+            // pointerdown.
+            event.stopPropagation();
             const handle = event.currentTarget;
             const cardEl = handle.closest('[data-item-row]');
             if (!cardEl) return;
@@ -2342,6 +2378,91 @@
             // cloud sync (e.g. on sign-in from another device) doesn't pull
             // the old order back.
             appState.items.filter(i => libraryGroupOf(i) === group).forEach(i => saveStateToCloud(i));
+        }
+
+        // --- Swipe-to-delete --------------------------------------------
+        // Replaces the persistent, always-visible Delete button that used
+        // to sit in every row (freeing that width for the fields that
+        // matter every time - title/author/progress/tags). Swiping the row
+        // to the right reveals a Delete action underneath it on the left;
+        // tapping that still goes through deleteItem()'s own confirm()
+        // dialog, so nothing here makes deleting easier to do by accident.
+        let itemSwipeState = null;
+        const ITEM_SWIPE_REVEAL_WIDTH = 76; // px - matches the reveal panel's width in renderItemCard
+
+        function startItemSwipe(id, event) {
+            if (event.button !== undefined && event.button !== 0) return;
+            const foreground = event.currentTarget;
+            closeAllSwipedRows(foreground);
+            itemSwipeState = {
+                foreground,
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startY: event.clientY,
+                startOffset: parseFloat(foreground.dataset.swipeOffset || '0'),
+                offset: parseFloat(foreground.dataset.swipeOffset || '0'),
+                moved: false,
+                captured: false,
+            };
+            foreground.addEventListener('pointermove', onItemSwipeMove);
+            foreground.addEventListener('pointerup', onItemSwipeEnd);
+            foreground.addEventListener('pointercancel', onItemSwipeEnd);
+        }
+
+        function onItemSwipeMove(event) {
+            if (!itemSwipeState || event.pointerId !== itemSwipeState.pointerId) return;
+            const dx = event.clientX - itemSwipeState.startX;
+            const dy = event.clientY - itemSwipeState.startY;
+            if (!itemSwipeState.moved) {
+                // Only commit to a horizontal swipe once movement is clearly
+                // more horizontal than vertical - otherwise this would
+                // hijack an ordinary tap (checkbox, Queue/Edit buttons,
+                // tap-to-play) or a vertical scroll of the page.
+                if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+                if (Math.abs(dy) > Math.abs(dx)) return;
+                itemSwipeState.moved = true;
+                itemSwipeState.foreground.style.transition = 'none';
+                try {
+                    itemSwipeState.foreground.setPointerCapture(event.pointerId);
+                    itemSwipeState.captured = true;
+                } catch (e) {}
+            }
+            event.preventDefault();
+            const offset = Math.max(0, Math.min(ITEM_SWIPE_REVEAL_WIDTH, itemSwipeState.startOffset + dx));
+            itemSwipeState.offset = offset;
+            itemSwipeState.foreground.style.transform = `translateX(${offset}px)`;
+        }
+
+        function onItemSwipeEnd(event) {
+            if (!itemSwipeState || event.pointerId !== itemSwipeState.pointerId) return;
+            const { foreground, moved, offset, captured } = itemSwipeState;
+            foreground.removeEventListener('pointermove', onItemSwipeMove);
+            foreground.removeEventListener('pointerup', onItemSwipeEnd);
+            foreground.removeEventListener('pointercancel', onItemSwipeEnd);
+            if (captured) { try { foreground.releasePointerCapture(event.pointerId); } catch (e) {} }
+            itemSwipeState = null;
+
+            if (!moved) return; // an ordinary tap - let its own click handler run normally
+
+            foreground.style.transition = 'transform 0.18s ease-out';
+            // Snap fully open past the halfway point, closed otherwise.
+            const settled = offset > ITEM_SWIPE_REVEAL_WIDTH / 2 ? ITEM_SWIPE_REVEAL_WIDTH : 0;
+            foreground.style.transform = `translateX(${settled}px)`;
+            foreground.dataset.swipeOffset = String(settled);
+        }
+
+        // Closes every swiped-open row except (optionally) the one about to
+        // be interacted with, so starting a new swipe or tapping elsewhere
+        // in the list doesn't leave a previous row stuck open.
+        function closeAllSwipedRows(exceptForeground) {
+            document.querySelectorAll('[data-item-swipe-foreground]').forEach(el => {
+                if (el === exceptForeground) return;
+                if (el.dataset.swipeOffset && el.dataset.swipeOffset !== '0') {
+                    el.style.transition = 'transform 0.18s ease-out';
+                    el.style.transform = 'translateX(0px)';
+                    el.dataset.swipeOffset = '0';
+                }
+            });
         }
 
         function toggleItemSelection(itemId, event) {
@@ -2529,6 +2650,33 @@
             closeModals();
         }
 
+        // Numeric-then-alphabetical ("natural") comparison of two titles:
+        // runs of digits compare by their numeric value, so "Track 2" sorts
+        // before "Track 10" (a plain string sort would put "10" first);
+        // everything else compares as ordinary case-insensitive text.
+        // Used to order a combined volume's tracks regardless of what order
+        // they were selected in.
+        function naturalCompare(a, b) {
+            const re = /(\d+)|(\D+)/g;
+            const partsA = String(a || '').match(re) || [];
+            const partsB = String(b || '').match(re) || [];
+            const len = Math.max(partsA.length, partsB.length);
+            for (let i = 0; i < len; i++) {
+                const pa = partsA[i] || '';
+                const pb = partsB[i] || '';
+                const isNumA = /^\d+$/.test(pa);
+                const isNumB = /^\d+$/.test(pb);
+                if (isNumA && isNumB) {
+                    const diff = parseInt(pa, 10) - parseInt(pb, 10);
+                    if (diff !== 0) return diff;
+                } else {
+                    const cmp = pa.localeCompare(pb, undefined, { sensitivity: 'base' });
+                    if (cmp !== 0) return cmp;
+                }
+            }
+            return 0;
+        }
+
         function combineSelectedItems() {
             if (appState.selectedItemIds.length < 2) {
                 alert('Please select at least 2 files to combine into a volume.');
@@ -2537,11 +2685,15 @@
             const volTitle = prompt('Enter a title for the combined Volume:', 'Combined Audiobook Volume');
             if (!volTitle) return;
 
-            // Preserve the order the user selected them in, not their order
-            // in the library, so playback advances the way they intended.
+            // Ordered numerically-then-alphabetically by title (see
+            // naturalCompare) rather than selection order - end-user
+            // testing found relying on the order items happened to be
+            // tapped in unreliable for getting chapters/episodes into
+            // playback order.
             const selectedItems = appState.selectedItemIds
                 .map(id => appState.items.find(i => i.id === id))
-                .filter(Boolean);
+                .filter(Boolean)
+                .sort((a, b) => naturalCompare(a.title, b.title));
 
             // Each subtrack carries everything playItem() needs to resolve
             // it on its own (id/local/storagePath for the local-file/cloud
@@ -2724,33 +2876,45 @@
             const isCurrent = appState.currentId === item.id;
             const isChecked = appState.selectedItemIds.includes(item.id);
             const tagsHtml = item.tags && item.tags.length > 0 ? item.tags.map(t => `<span class="text-[10.5px] bg-gray-100 text-[#3F8CB8] px-1.5 py-0.5 rounded-md font-medium">#${t.trim()}</span>`).join(' ') : '';
+            // The foreground needs an opaque background of its own now - it
+            // slides over the red Delete reveal layer sitting behind it, so
+            // it can no longer just rely on the shared list container's
+            // white background showing through.
+            const rowBg = isCurrent ? 'bg-[#FFDDA6]/20 border-l-4 border-[#3F8CB8]' : 'bg-white';
 
             return `
-                <div class="p-3 flex items-center justify-between hover:bg-gray-50/80 transition ${isCurrent ? 'bg-[#FFDDA6]/20 border-l-4 border-[#3F8CB8]' : ''}" data-item-row data-item-id="${item.id}" data-group-key="${libraryGroupOf(item)}">
-                    <div class="drag-handle shrink-0 mr-4 w-8 h-10 flex items-center justify-center text-gray-400 hover:text-[#3F8CB8] active:text-[#3F8CB8] cursor-grab active:cursor-grabbing touch-none select-none" title="Drag to reorder" onpointerdown="startItemDrag('${item.id}', event)">
-                        <i class="fa-solid fa-grip-vertical text-sm"></i>
-                    </div>
-                    <div class="flex items-center space-x-3 flex-1 min-w-0 cursor-pointer" onclick="playItem('${item.id}')">
-                        <input type="checkbox" ${isChecked ? 'checked' : ''} onclick="toggleItemSelection('${item.id}', event)" class="w-4 h-4 accent-[#3F8CB8] rounded cursor-pointer shrink-0">
-                        <div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0 shadow-sm flex items-center justify-center">
-                            ${item.cover ? `<img src="${item.cover}" class="w-full h-full object-cover">` : '<i class="fa-solid fa-music text-gray-400"></i>'}
+                <div class="relative overflow-hidden" data-item-row data-item-id="${item.id}" data-group-key="${libraryGroupOf(item)}">
+                    <div class="absolute inset-y-0 left-0 w-[76px] bg-red-500 flex items-center justify-center text-white cursor-pointer" onclick="deleteItem('${item.id}')">
+                        <div class="flex flex-col items-center gap-1">
+                            <i class="fa-solid fa-trash text-sm"></i>
+                            <span class="text-[10px] font-semibold">Delete</span>
                         </div>
-                        <div class="min-w-0 flex-1">
-                            <h4 class="text-xs font-bold text-[#1B3F57] truncate">${item.title}</h4>
-                            <p class="text-[12.5px] text-gray-600 truncate">${item.author || 'Unknown Author'}${item.subTracks && item.subTracks.length > 0 ? ` • ${item.subTracks.length} tracks` : ''}</p>
-                            <div class="flex items-center space-x-2 mt-1">
-                                <div class="flex-1 bg-gray-200 h-1.5 rounded-full overflow-hidden max-w-[120px]">
-                                    <div class="bg-[#3F8CB8] h-full" style="width: ${pct}%"></div>
-                                </div>
-                                <span class="text-[11.5px] text-gray-500">${pct}% • ${timeRemaining}</span>
+                    </div>
+                    <div class="relative p-3 flex items-center justify-between hover:bg-gray-50/80 transition ${rowBg}" data-item-swipe-foreground data-swipe-offset="0" onpointerdown="startItemSwipe('${item.id}', event)">
+                        <div class="drag-handle shrink-0 mr-4 w-8 h-10 flex items-center justify-center text-gray-400 hover:text-[#3F8CB8] active:text-[#3F8CB8] cursor-grab active:cursor-grabbing touch-none select-none" title="Drag to reorder" onpointerdown="startItemDrag('${item.id}', event)">
+                            <i class="fa-solid fa-grip-vertical text-sm"></i>
+                        </div>
+                        <div class="flex items-center space-x-3 flex-1 min-w-0 cursor-pointer" onclick="playItem('${item.id}')">
+                            <input type="checkbox" ${isChecked ? 'checked' : ''} onclick="toggleItemSelection('${item.id}', event)" class="w-4 h-4 accent-[#3F8CB8] rounded cursor-pointer shrink-0">
+                            <div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0 shadow-sm flex items-center justify-center">
+                                ${item.cover ? `<img src="${item.cover}" class="w-full h-full object-cover">` : '<i class="fa-solid fa-music text-gray-400"></i>'}
                             </div>
-                            ${tagsHtml ? `<div class="flex flex-wrap gap-1 mt-1.5">${tagsHtml}</div>` : ''}
+                            <div class="min-w-0 flex-1">
+                                <h4 class="text-xs font-bold text-[#1B3F57] truncate">${item.title}</h4>
+                                <p class="text-[12.5px] text-gray-600 truncate">${item.author || 'Unknown Author'}${item.subTracks && item.subTracks.length > 0 ? ` • ${item.subTracks.length} tracks` : ''}</p>
+                                <div class="flex items-center space-x-2 mt-1">
+                                    <div class="flex-1 bg-gray-200 h-1.5 rounded-full overflow-hidden max-w-[180px]">
+                                        <div class="bg-[#3F8CB8] h-full" style="width: ${pct}%"></div>
+                                    </div>
+                                    <span class="text-[11.5px] text-gray-500">${pct}% • ${timeRemaining}</span>
+                                </div>
+                                ${tagsHtml ? `<div class="flex flex-wrap gap-1 mt-1.5">${tagsHtml}</div>` : ''}
+                            </div>
                         </div>
-                    </div>
-                    <div class="flex items-center space-x-1 ml-2">
-                        <button onclick="addToQueue('${item.id}', event)" class="w-[37px] h-[37px] rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Add to Queue"><i class="fa-solid fa-list-ol text-xs"></i></button>
-                        <button onclick="openEditModal('${item.id}')" class="w-[37px] h-[37px] rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Edit"><i class="fa-solid fa-ellipsis-vertical text-xs"></i></button>
-                        <button onclick="deleteItem('${item.id}')" class="w-[37px] h-[37px] rounded-full hover:bg-red-50 flex items-center justify-center text-red-500 cursor-pointer" title="Delete"><i class="fa-solid fa-trash text-xs"></i></button>
+                        <div class="flex items-center space-x-1 ml-2">
+                            <button onclick="addToQueue('${item.id}', event)" class="w-[37px] h-[37px] rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Add to Queue"><i class="fa-solid fa-list-ol text-xs"></i></button>
+                            <button onclick="openEditModal('${item.id}')" class="w-[37px] h-[37px] rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Edit"><i class="fa-solid fa-ellipsis-vertical text-xs"></i></button>
+                        </div>
                     </div>
                 </div>
             `;
@@ -2927,8 +3091,8 @@
             try {
                 navigator.mediaSession.setActionHandler('play', () => togglePlayPause());
                 navigator.mediaSession.setActionHandler('pause', () => togglePlayPause());
-                navigator.mediaSession.setActionHandler('seekbackward', () => skipTime(-15));
-                navigator.mediaSession.setActionHandler('seekforward', () => skipTime(30));
+                navigator.mediaSession.setActionHandler('seekbackward', () => skipTime(-appState.skipBackwardSeconds));
+                navigator.mediaSession.setActionHandler('seekforward', () => skipTime(appState.skipForwardSeconds));
                 // playbackState defaults to 'none' until explicitly set, and
                 // browsers (iOS Safari in particular) treat 'none' as "no
                 // active session" - no interactive lock-screen/Now Playing
@@ -3429,6 +3593,9 @@
             const currentItem = appState.items.find(i => i.id === appState.currentId);
             const playBtnMini = document.getElementById('mini-play-btn');
             const playBtnModal = document.getElementById('modal-play-btn');
+
+            document.getElementById('skip-backward-label').innerText = `${appState.skipBackwardSeconds}s`;
+            document.getElementById('skip-forward-label').innerText = `${appState.skipForwardSeconds}s`;
 
             if (appState.isPlaying) {
                 playBtnMini.innerHTML = '<i class="fa-solid fa-pause text-sm"></i>';
@@ -4829,6 +4996,14 @@
         function saveAppSettings() {
             appState.startTrim = parseInt(document.getElementById('global-start-trim').value || '0', 10);
             appState.endTrim = parseInt(document.getElementById('global-end-trim').value || '0', 10);
+            // Never let either skip amount collapse to 0/negative (a stuck
+            // skip button that does nothing) - each falls back to its own
+            // previous value, not the other one's, since they're
+            // deliberately independent.
+            const newSkipBackward = parseInt(document.getElementById('skip-backward-input').value || '0', 10);
+            const newSkipForward = parseInt(document.getElementById('skip-forward-input').value || '0', 10);
+            appState.skipBackwardSeconds = newSkipBackward > 0 ? newSkipBackward : appState.skipBackwardSeconds;
+            appState.skipForwardSeconds = newSkipForward > 0 ? newSkipForward : appState.skipForwardSeconds;
             saveState();
             closeModals();
         }
@@ -4848,15 +5023,26 @@
                 list.innerHTML = '<div class="text-center text-xs text-gray-400 py-6">No bookmarks saved yet.</div>';
                 return;
             }
-            list.innerHTML = item.bookmarks.map((b) => `
-                <div class="py-2.5 flex items-center justify-between">
-                    <div>
-                        <h5 class="text-xs font-bold text-[#1B3F57]">${b.title}</h5>
+            list.innerHTML = item.bookmarks.map((b, i) => `
+                <div class="py-2.5 flex items-center justify-between gap-2">
+                    <div class="min-w-0">
+                        <h5 class="text-xs font-bold text-[#1B3F57] truncate">${b.title}</h5>
                         <span class="text-[11.5px] text-gray-400">${formatTime(b.time)}</span>
                     </div>
-                    <button onclick="audioEl.currentTime = ${b.time}; closeModals();" class="px-3 py-1 bg-[#3F8CB8] text-white text-xs rounded-lg cursor-pointer">Jump</button>
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button onclick="audioEl.currentTime = ${b.time}; closeModals();" class="px-3 py-1 bg-[#3F8CB8] text-white text-xs rounded-lg cursor-pointer">Jump</button>
+                        <button onclick="deleteBookmark(${i})" title="Delete Bookmark" class="w-7 h-7 rounded-lg hover:bg-red-50 text-red-500 flex items-center justify-center cursor-pointer"><i class="fa-solid fa-trash text-[11px]"></i></button>
+                    </div>
                 </div>
             `).join('');
+        }
+
+        function deleteBookmark(index) {
+            const item = appState.items.find(i => i.id === appState.currentId);
+            if (!item || !item.bookmarks || !item.bookmarks[index]) return;
+            item.bookmarks.splice(index, 1);
+            saveState();
+            renderBookmarksList();
         }
 
         // --- Play Queue -----------------------------------------------------
