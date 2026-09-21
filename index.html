@@ -2895,11 +2895,18 @@
             const isCurrent = appState.currentId === item.id;
             const isChecked = appState.selectedItemIds.includes(item.id);
             const tagsHtml = item.tags && item.tags.length > 0 ? item.tags.map(t => `<span class="text-[10.5px] bg-gray-100 text-[#3F8CB8] px-1.5 py-0.5 rounded-md font-medium">#${t.trim()}</span>`).join(' ') : '';
-            // The foreground needs an opaque background of its own now - it
-            // slides over the red Delete reveal layer sitting behind it, so
-            // it can no longer just rely on the shared list container's
-            // white background showing through.
-            const rowBg = isCurrent ? 'bg-[#FFDDA6]/20 border-l-4 border-[#3F8CB8]' : 'bg-white';
+            // The foreground needs a fully OPAQUE background of its own now
+            // - it sits directly in front of the red Delete reveal layer,
+            // not just the shared list container. The previous highlight
+            // (bg-[#FFDDA6]/20, only 20% opaque) worked fine when there was
+            // nothing but the container's own white behind it, but let the
+            // red layer bleed straight through permanently for whichever
+            // row happened to be playing - a pure rendering artifact with
+            // no swipe state behind it at all, which is exactly why
+            // tapping, reverse-swiping, or playing a different track never
+            // cleared it. #FFF8ED is the opaque equivalent of that same
+            // cream tint over white (same visual highlight, just solid).
+            const rowBg = isCurrent ? 'bg-[#FFF8ED] border-l-4 border-[#3F8CB8]' : 'bg-white';
 
             return `
                 <div class="relative overflow-hidden" data-item-row data-item-id="${item.id}" data-group-key="${libraryGroupOf(item)}">
