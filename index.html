@@ -1077,7 +1077,7 @@
             // this decides where that write lands.
             setRememberMePreference(document.getElementById('remember-me-checkbox').checked);
             const { error } = await supabaseClient.auth.signUp({ email, password });
-            if (error) alert(error.message);
+            if (error) alert(describeAuthError(error.message));
             else alert('Check your email for confirmation link.');
         }
 
@@ -1088,7 +1088,7 @@
             // Same reasoning as supabaseSignUp() above.
             setRememberMePreference(document.getElementById('remember-me-checkbox').checked);
             const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-            if (error) alert(error.message);
+            if (error) alert(describeAuthError(error.message));
             else {
                 currentUser = data.user;
                 updateAuthUI(true);
@@ -1632,6 +1632,26 @@
             alert(message);
         }
 
+        // Supabase rejects a JWT outright if its "issued at" claim reads
+        // later than the verifying server's own clock - "JWT issued at
+        // future" is the literal message it sends back. This is
+        // overwhelmingly a wrong DEVICE clock (off, or not set to update
+        // automatically), not a problem with the account, the app, or
+        // Supabase itself - a real, correctly-issued token can never
+        // actually be "from the future" otherwise. The raw message alone
+        // gives someone nothing to act on, so it's rewritten into what
+        // actually fixes it wherever an auth/cloud-sync error is shown
+        // (sign-in, sign-up, and every showCloudSyncError call below).
+        function isClockSkewAuthError(message) {
+            return /issued at future|issued in the future/i.test(message || '');
+        }
+        function describeAuthError(message) {
+            if (!isClockSkewAuthError(message)) return message;
+            return "This device's clock appears to be set incorrectly (it reads earlier than the real time), which is blocking sign-in to your account.\n\n" +
+                "Go to your device's Date & Time settings and turn on \"Set Automatically,\" then try again.\n\n" +
+                `Technical detail: ${message}`;
+        }
+
         let lastCloudSyncAlertAt = 0;
         // Cloud sync errors used to only reach console.error - invisible
         // unless devtools happened to be open - which is how a library could
@@ -1644,7 +1664,7 @@
             const now = Date.now();
             if (now - lastCloudSyncAlertAt < 30000) return;
             lastCloudSyncAlertAt = now;
-            alert(message);
+            alert(describeAuthError(message));
         }
 
         function persistCoreState() {
