@@ -1475,7 +1475,20 @@
                                 }
                             }
                             console.error('Cloud audio upload failed for', item.id, err);
-                            showCloudSyncError(`Couldn't upload "${item.title}" to your account: ${msg}`);
+                            // tus-js-client's own error message for a
+                            // request that never got any response at all
+                            // (connection dropped or too weak mid-transfer,
+                            // as opposed to the server actually rejecting
+                            // it) is a wall of internal detail - "response
+                            // code: n/a", "[object XMLHttpRequestProgressEvent]"
+                            // - meaningless to anyone but a developer, and
+                            // gives no hint that this is an ordinary,
+                            // already-retried network hiccup rather than
+                            // something wrong with the account or the file.
+                            const isNetworkFailure = /response code:\s*n\/a/i.test(msg) || /XMLHttpRequestProgressEvent/i.test(msg);
+                            showCloudSyncError(isNetworkFailure
+                                ? `Couldn't upload "${item.title}" to your account right now - the connection dropped or is too weak. It'll keep playing on this device; try again once you have a stronger connection (Retry Cloud Sync in your Cloud Account panel).`
+                                : `Couldn't upload "${item.title}" to your account: ${msg}`);
                             resolve();
                         },
                         onSuccess: () => {
@@ -2977,6 +2990,25 @@
         // exact same src once before giving up - a track that would have
         // played fine normally still does, just without the volume-boost
         // safety net for that one track.
+        // The old message ("Local browser codec support for .m4b / .mp4
+        // files may vary or the URL is blocked") was hardcoded verbatim
+        // regardless of what was actually being played - reported against a
+        // local .mp3 upload, where it's actively misleading on both counts:
+        // it names the wrong file type, and "the URL is blocked" describes
+        // a CORS/network failure that cannot happen for a local blob: URL
+        // at all (no network request is involved in playing one). A local
+        // file's audio decode failing means the file itself - corrupted,
+        // incomplete, or a genuinely unsupported format - not its URL.
+        function describePlaybackError(source, isLocal) {
+            if (isLocal) {
+                return "This audio file appears to be corrupted, incomplete, or in a format this browser can't play. Try removing it and re-uploading the original file.";
+            }
+            const url = (source && source.url) || '';
+            const extMatch = url.match(/\.([a-z0-9]{2,4})(?:\?|#|$)/i);
+            const extLabel = extMatch ? `.${extMatch[1].toLowerCase()}` : 'this file type';
+            return `Local browser codec support for ${extLabel} files may vary, or the URL is blocked.`;
+        }
+
         function withCorsRetry(giveUp) {
             let retried = false;
             return function onAudioError() {
@@ -3043,7 +3075,7 @@
             audioEl.playbackRate = appState.slothMode ? 0.5 : (item.speed || 1.0);
 
             audioEl.onerror = withCorsRetry(() => {
-                alert('Playback error: Local browser codec support for .m4b / .mp4 files may vary or the URL is blocked.');
+                alert('Playback error: ' + describePlaybackError(item, !!item.local));
                 appState.isPlaying = false;
                 updatePlayerUI();
             });
@@ -3087,7 +3119,7 @@
             audioEl.playbackRate = appState.slothMode ? 0.5 : (volumeItem.speed || 1.0);
 
             audioEl.onerror = withCorsRetry(() => {
-                alert(`Playback error on "${sub.title}": Local browser codec support for .m4b / .mp4 files may vary or the URL is blocked.`);
+                alert(`Playback error on "${sub.title}": ` + describePlaybackError(sub, !!sub.local));
                 appState.isPlaying = false;
                 updatePlayerUI();
             });
@@ -4412,6 +4444,28 @@
                         return;
                     }
                     const stableBlob = new Blob([buffer], { type: mime || 'application/octet-stream' });
+
+                    // Upgrade THIS session's own playback URL to the same
+                    // fully-read, stable copy too - not just what IndexedDB/
+                    // cloud storage get below. The blob: URL created above
+                    // (at pick time) wraps the raw File reference directly,
+                    // which for a file picked from somewhere like iCloud
+                    // Drive can have a short-lived OS-granted access window
+                    // (see the comment above) - it can play back fine right
+                    // away and then fail to decode moments later once that
+                    // window lapses. Successfully reading the file all the
+                    // way through to a complete in-memory buffer just now
+                    // proves the bytes are good, so there's no reason to
+                    // keep this item's playback on the more fragile original
+                    // reference once a sturdier one exists. Skipped only if
+                    // this item is the one actively loaded into the player
+                    // right now - revoking a blob: URL out from under
+                    // in-flight playback would cut it off immediately.
+                    if (appState.currentId !== newItem.id) {
+                        if (newItem.url && newItem.url.startsWith('blob:')) URL.revokeObjectURL(newItem.url);
+                        newItem.url = URL.createObjectURL(stableBlob);
+                    }
+
                     // Deliberately NOT chained: storing locally (IndexedDB,
                     // for offline playback on this device) and uploading to
                     // the cloud (Supabase Storage, for cross-device sync)
