@@ -869,6 +869,9 @@
         try { localStorage.removeItem('indybooks_last_good_snapshot'); } catch (e) {}
 
         const audioEl = document.getElementById('main-audio-element');
+        // Which item (or "volumeId::trackIndex") audioEl's current src belongs
+        // to - see syncCurrentPlaybackTime().
+        let loadedSourceKey = null;
         let audioCtx = null;
         let gainNode = null;
         // crossOrigin is deliberately left UNSET here. It used to be forced
@@ -2791,6 +2794,7 @@
             saveState();
             clearSelection();
             renderLibrary();
+            measureVolumeTracks(combinedItem);
         }
 
         // One folder grid tile: a large square cover (or a color-fallback
@@ -3055,6 +3059,7 @@
             if (item.subTracks && item.subTracks.length > 0) {
                 let idx = item.currentSubTrackIndex;
                 if (!(idx >= 0 && idx < item.subTracks.length)) idx = 0;
+                measureVolumeTracks(item);
                 await playSubTrack(item, idx, { autoplay });
                 return;
             }
@@ -3072,6 +3077,7 @@
                 return;
             }
 
+            loadedSourceKey = id;
             audioEl.src = resolved.url;
             audioEl.playbackRate = appState.slothMode ? 0.5 : (item.speed || 1.0);
 
@@ -3116,6 +3122,7 @@
                 return;
             }
 
+            loadedSourceKey = `${volumeItem.id}::${idx}`;
             audioEl.src = resolved.url;
             audioEl.playbackRate = appState.slothMode ? 0.5 : (volumeItem.speed || 1.0);
 
@@ -3145,6 +3152,83 @@
 
         function recomputeVolumeDuration(volumeItem) {
             volumeItem.duration = volumeItem.subTracks.reduce((sum, s) => sum + (s.duration || 0), 0);
+        }
+
+        // Reads a track's length by loading only its metadata into a
+        // throwaway element. Resolves 0 if it can't be read.
+        function probeAudioDuration(url) {
+            return new Promise(resolve => {
+                const probe = new Audio();
+                let settled = false;
+                const finish = seconds => {
+                    if (settled) return;
+                    settled = true;
+                    probe.removeAttribute('src');
+                    probe.load();
+                    resolve(seconds);
+                };
+                probe.preload = 'metadata';
+                probe.onloadedmetadata = () => finish(isFinite(probe.duration) ? probe.duration : 0);
+                probe.onerror = () => finish(0);
+                setTimeout(() => finish(0), 15000);
+                probe.src = url;
+                probe.load();
+            });
+        }
+
+        // Deliberately doesn't go through resolveLocalOrCloudUrl(): that
+        // swaps sub.url and revokes the old one, which could pull the rug
+        // out from under the player if the same track is loading there.
+        async function probeSubTrackDuration(volumeItem, sub) {
+            if (!sub.local) return sub.url ? probeAudioDuration(sub.url) : 0;
+            if (sub.url && freshSubTrackBlobIds.has(`${volumeItem.id}::${sub.id}`)) return probeAudioDuration(sub.url);
+            let blob = null;
+            try { blob = await loadLocalAudio(sub.id); } catch (e) {}
+            // Not on this device (cloud-only): not worth a full download
+            // just to measure it - it's measured when it's played instead.
+            if (!blob) return 0;
+            const tempUrl = URL.createObjectURL(blob);
+            try {
+                return await probeAudioDuration(tempUrl);
+            } finally {
+                URL.revokeObjectURL(tempUrl);
+            }
+        }
+
+        // A volume's total length is the sum of its tracks' lengths, and a
+        // track's length otherwise only became known once it had been
+        // played - so unplayed tracks counted as 0:00, and a fresh volume's
+        // total and time remaining covered only its first track. Measure
+        // every track whose length is still unknown up front instead.
+        const volumesBeingMeasured = new Set();
+        async function measureVolumeTracks(volumeItem) {
+            if (volumesBeingMeasured.has(volumeItem.id)) return;
+            volumesBeingMeasured.add(volumeItem.id);
+            let changed = false;
+            try {
+                for (const sub of volumeItem.subTracks) {
+                    if (sub.duration > 0) continue;
+                    const original = appState.items.find(i => i.id === sub.id);
+                    const seconds = (original && original.duration > 0)
+                        ? original.duration
+                        : await probeSubTrackDuration(volumeItem, sub);
+                    // Re-checked: playback may have measured it meanwhile.
+                    if (seconds > 0 && !(sub.duration > 0)) {
+                        sub.duration = seconds;
+                        changed = true;
+                    }
+                }
+            } finally {
+                volumesBeingMeasured.delete(volumeItem.id);
+            }
+            if (!changed || !appState.items.includes(volumeItem)) return;
+            recomputeVolumeDuration(volumeItem);
+            const idx = volumeItem.currentSubTrackIndex || 0;
+            volumeItem.currentTime = volumeItem.subTracks.slice(0, idx).reduce((sum, s) => sum + (s.duration || 0), 0)
+                + (volumeItem.subTracks[idx]?.currentTime || 0);
+            if (appState.currentId === volumeItem.id) updatePlayerProgressUI();
+            saveState();
+            renderLibrary();
         }
 
         // A data: URI cover always sniffs as its real MIME type; a plain
@@ -3548,12 +3632,24 @@
         // (which is only ever the position within whichever subtrack is
         // currently loaded). Returns the current item, or null if nothing is
         // playing, so callers can bail out the same way.
+        //
+        // Only trusts the player while it actually holds the current item's
+        // audio. currentId/currentSubTrackIndex switch BEFORE the new source
+        // is assigned (resolving it can take seconds for a cloud download),
+        // so the previous track's timeupdates used to be written onto the new
+        // one; and assigning a new source fires a timeupdate at 0:00 before
+        // its metadata loads, which overwrote the saved position that
+        // onloadedmetadata was about to restore - wiping resume points and
+        // making a seek into another volume track restart that track.
         function syncCurrentPlaybackTime() {
             if (!appState.currentId) return null;
             const currentItem = appState.items.find(i => i.id === appState.currentId);
             if (!currentItem) return null;
+            const isVolume = currentItem.subTracks && currentItem.subTracks.length > 0;
+            const expectedKey = isVolume ? `${currentItem.id}::${currentItem.currentSubTrackIndex || 0}` : currentItem.id;
+            if (loadedSourceKey !== expectedKey || audioEl.readyState < HTMLMediaElement.HAVE_METADATA) return null;
 
-            if (currentItem.subTracks && currentItem.subTracks.length > 0) {
+            if (isVolume) {
                 const idx = currentItem.currentSubTrackIndex || 0;
                 const sub = currentItem.subTracks[idx];
                 if (!sub) return currentItem;
