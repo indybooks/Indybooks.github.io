@@ -1915,6 +1915,7 @@
             // eviction needs to know currentUser/storagePath state is
             // actually settled before deciding what's safe to drop.
             setTimeout(evictStaleLocalAudioCache, 3000);
+            setTimeout(backfillEmbeddedCovers, 4000);
         };
 
         function registerServiceWorker() {
@@ -3871,6 +3872,228 @@
             return map[ext] || '';
         }
 
+        // --- Embedded cover art --------------------------------------------
+        // Audio files often carry their own artwork: an APIC (ID3v2.2: PIC)
+        // frame in an MP3's ID3v2 tag, or a covr atom in an M4A/M4B's
+        // metadata. Only the tag/metadata region is read via Blob.slice,
+        // never the whole file - an audiobook can run to hundreds of MB.
+        const MAX_EMBEDDED_TAG_BYTES = 32 * 1024 * 1024;
+
+        function asciiAt(bytes, offset, length) {
+            return String.fromCharCode(...bytes.subarray(offset, offset + length));
+        }
+        function readUint32(bytes, offset) {
+            return ((bytes[offset] << 24) >>> 0) + (bytes[offset + 1] << 16) + (bytes[offset + 2] << 8) + bytes[offset + 3];
+        }
+        function readSynchsafe(bytes, offset) {
+            return (bytes[offset] << 21) | (bytes[offset + 1] << 14) | (bytes[offset + 2] << 7) | bytes[offset + 3];
+        }
+        function imageMimeFromBytes(bytes) {
+            if (bytes.length > 3 && bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return 'image/jpeg';
+            if (bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return 'image/png';
+            return '';
+        }
+        function removeId3Unsync(bytes) {
+            const out = new Uint8Array(bytes.length);
+            let j = 0;
+            for (let i = 0; i < bytes.length; i++) {
+                out[j++] = bytes[i];
+                if (bytes[i] === 0xFF && bytes[i + 1] === 0x00) i++;
+            }
+            return out.subarray(0, j);
+        }
+
+        // Returns the image bytes from the best picture frame (front cover
+        // preferred), or null.
+        function findId3Picture(tag) {
+            const major = tag[3];
+            const tagFlags = tag[5];
+            let body = tag.subarray(10);
+            if ((tagFlags & 0x80) && major < 4) body = removeId3Unsync(body);
+            let pos = 0;
+            if (tagFlags & 0x40) pos = major === 4 ? readSynchsafe(body, 0) : readUint32(body, 0) + 4;
+            const idLen = major === 2 ? 3 : 4;
+            const headerLen = major === 2 ? 6 : 10;
+            let fallback = null;
+            while (pos + headerLen <= body.length) {
+                const id = asciiAt(body, pos, idLen);
+                if (!/^[A-Z0-9]+$/.test(id)) break; // reached padding
+                const size = major === 2 ? (body[pos + 3] << 16) | (body[pos + 4] << 8) | body[pos + 5]
+                    : major === 4 ? readSynchsafe(body, pos + 4) : readUint32(body, pos + 4);
+                const formatFlags = major === 2 ? 0 : body[pos + 9];
+                let content = body.subarray(pos + headerLen, pos + headerLen + size);
+                pos += headerLen + size;
+                if (id !== 'APIC' && id !== 'PIC') continue;
+
+                if (major === 3) {
+                    if (formatFlags & 0xC0) continue; // compressed / encrypted
+                    if (formatFlags & 0x20) content = content.subarray(1); // grouping id
+                } else if (major === 4) {
+                    if (formatFlags & 0x0C) continue; // compressed / encrypted
+                    if (formatFlags & 0x40) content = content.subarray(1); // grouping id
+                    if (formatFlags & 0x01) content = content.subarray(4); // data length indicator
+                    if (formatFlags & 0x02) content = removeId3Unsync(content);
+                }
+
+                const encoding = content[0];
+                let p;
+                if (major === 2) {
+                    p = 4; // 3-char image format, e.g. "JPG"
+                } else {
+                    const mimeEnd = content.indexOf(0, 1);
+                    if (mimeEnd < 0) continue;
+                    p = mimeEnd + 1;
+                }
+                const pictureType = content[p];
+                p += 1;
+                if (encoding === 1 || encoding === 2) {
+                    while (p + 1 < content.length && !(content[p] === 0 && content[p + 1] === 0)) p += 2;
+                    p += 2;
+                } else {
+                    while (p < content.length && content[p] !== 0) p++;
+                    p += 1;
+                }
+                const image = content.subarray(p);
+                if (!imageMimeFromBytes(image)) continue;
+                if (pictureType === 3) return image;
+                if (!fallback) fallback = image;
+            }
+            return fallback;
+        }
+
+        // Finds the first box of `type` among the boxes in bytes[start, end)
+        // and returns its payload range, or null.
+        function findMp4Box(bytes, start, end, type) {
+            let pos = start;
+            while (pos + 8 <= end) {
+                let size = readUint32(bytes, pos);
+                let header = 8;
+                if (size === 1) {
+                    if (pos + 16 > end) return null;
+                    size = readUint32(bytes, pos + 8) * 2 ** 32 + readUint32(bytes, pos + 12);
+                    header = 16;
+                } else if (size === 0) {
+                    size = end - pos;
+                }
+                if (size < header) return null;
+                if (asciiAt(bytes, pos + 4, 4) === type) return { start: pos + header, end: Math.min(pos + size, end) };
+                pos += size;
+            }
+            return null;
+        }
+
+        // moov > udta > meta > ilst > covr > data
+        function findMp4Cover(moov) {
+            const udta = findMp4Box(moov, 0, moov.length, 'udta');
+            const meta = findMp4Box(moov, udta ? udta.start : 0, udta ? udta.end : moov.length, 'meta');
+            if (!meta) return null;
+            // meta is normally a "full box" (4 version/flag bytes before its
+            // children); QuickTime-written files omit those bytes.
+            const childrenStart = asciiAt(moov, meta.start + 4, 4) === 'hdlr' ? meta.start : meta.start + 4;
+            const ilst = findMp4Box(moov, childrenStart, meta.end, 'ilst');
+            const covr = ilst && findMp4Box(moov, ilst.start, ilst.end, 'covr');
+            const data = covr && findMp4Box(moov, covr.start, covr.end, 'data');
+            // data payload: 4-byte type indicator + 4-byte locale, then the image.
+            if (!data || data.end - data.start <= 8) return null;
+            return moov.subarray(data.start + 8, data.end);
+        }
+
+        // Resolves an image Blob of the file's embedded artwork, or null.
+        async function extractEmbeddedCover(blob) {
+            const head = new Uint8Array(await blob.slice(0, 10).arrayBuffer());
+            if (head.length < 10) return null;
+            let image = null;
+            if (asciiAt(head, 0, 3) === 'ID3') {
+                const tagLength = 10 + readSynchsafe(head, 6);
+                if (tagLength > MAX_EMBEDDED_TAG_BYTES) return null;
+                image = findId3Picture(new Uint8Array(await blob.slice(0, tagLength).arrayBuffer()));
+            } else if (asciiAt(head, 4, 4) === 'ftyp') {
+                // moov is often at the END of the file, so walk the
+                // top-level boxes by their headers rather than reading in.
+                let pos = 0;
+                while (pos + 8 <= blob.size) {
+                    const h = new Uint8Array(await blob.slice(pos, pos + 16).arrayBuffer());
+                    let size = readUint32(h, 0);
+                    let header = 8;
+                    if (size === 1) {
+                        size = readUint32(h, 8) * 2 ** 32 + readUint32(h, 12);
+                        header = 16;
+                    } else if (size === 0) {
+                        size = blob.size - pos;
+                    }
+                    if (size < header) break;
+                    if (asciiAt(h, 4, 4) === 'moov') {
+                        if (size > MAX_EMBEDDED_TAG_BYTES) return null;
+                        image = findMp4Cover(new Uint8Array(await blob.slice(pos + header, pos + size).arrayBuffer()));
+                        break;
+                    }
+                    pos += size;
+                }
+            }
+            if (!image) return null;
+            const mime = imageMimeFromBytes(image);
+            return mime ? new Blob([image], { type: mime }) : null;
+        }
+
+        // Sets item.cover from the audio file's embedded artwork, through the
+        // same resize as a hand-picked cover. Never overwrites an existing
+        // cover. Resolves true if a cover was set.
+        async function applyEmbeddedCover(item, audioBlob) {
+            if (item.cover) return false;
+            try {
+                const art = await extractEmbeddedCover(audioBlob);
+                if (!art) return false;
+                const dataUrl = await resizeImageToDataUrl(art, COVER_RESIZE_MAX_DIM, COVER_RESIZE_QUALITY);
+                if (item.cover || !appState.items.includes(item) || dataUrl.length > MAX_COVER_DATA_LENGTH) return false;
+                item.cover = dataUrl;
+                saveStateToCloud(item);
+                return true;
+            } catch (e) {
+                console.warn('Could not read embedded cover art for', item.title, e);
+                return false;
+            }
+        }
+
+        function showNewCover(item) {
+            saveState();
+            renderLibrary();
+            if (appState.currentId === item.id) {
+                updatePlayerUI();
+                setupMediaSession(item);
+            }
+        }
+
+        // Kept in its own key, not as a field on the item, because a cloud
+        // sync rebuilds items from the cloud row and would drop it - and once
+        // an item has been checked (or had a cover of its own), a cover the
+        // user later removes must never be put back automatically.
+        const COVER_SCANNED_KEY = 'indybooks_cover_scanned_ids';
+        function loadCoverScannedIds() {
+            try { return new Set(JSON.parse(localStorage.getItem(COVER_SCANNED_KEY) || '[]')); }
+            catch (e) { return new Set(); }
+        }
+        function markCoverScanned(id) {
+            const ids = loadCoverScannedIds();
+            if (ids.has(id)) return;
+            ids.add(id);
+            try { localStorage.setItem(COVER_SCANNED_KEY, JSON.stringify([...ids])); } catch (e) {}
+        }
+
+        // One-time pass for local files added before covers were read from
+        // them, so they don't have to be re-uploaded.
+        async function backfillEmbeddedCovers() {
+            const scanned = loadCoverScannedIds();
+            for (const item of appState.items.filter(i => i.local && !scanned.has(i.id))) {
+                if (item.cover) { markCoverScanned(item.id); continue; }
+                let blob = null;
+                try { blob = await loadLocalAudio(item.id); } catch (e) {}
+                if (!blob) continue; // not on this device - try again on a later launch
+                const found = await applyEmbeddedCover(item, blob);
+                markCoverScanned(item.id);
+                if (found) showNewCover(item);
+            }
+        }
+
         // Guesses title/author from a filename using the conventions
         // actually seen across this library plus the handful of formats
         // that cover most real-world audiobook/podcast rips:
@@ -4579,6 +4802,11 @@
                         if (newItem.url && newItem.url.startsWith('blob:')) URL.revokeObjectURL(newItem.url);
                         newItem.url = URL.createObjectURL(stableBlob);
                     }
+
+                    applyEmbeddedCover(newItem, stableBlob).then(found => {
+                        markCoverScanned(newItem.id);
+                        if (found) showNewCover(newItem);
+                    });
 
                     // Deliberately NOT chained: storing locally (IndexedDB,
                     // for offline playback on this device) and uploading to
