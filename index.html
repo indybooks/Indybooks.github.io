@@ -169,7 +169,8 @@
             <label class="bg-[#3F8CB8] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-xs font-semibold cursor-pointer">
                 <i class="fa-solid fa-file-arrow-up mb-1 text-sm text-[#FFB452]"></i>
                 Upload Audio
-                <input type="file" id="local-audio-input" accept="audio/*,.mp3,.m4a,.m4b,.aac,.wav,.ogg,.zip,audio/mp4,audio/x-m4b" multiple class="hidden" onchange="handleLocalFiles(event)">
+                <!-- No accept attribute on purpose: iOS turns the list into file-type filters that .m4b audiobooks don't match, so they show greyed out in the picker. handleLocalFiles() checks the type instead. -->
+                <input type="file" id="local-audio-input" multiple class="hidden" onchange="handleLocalFiles(event)">
             </label>
             <button onclick="playWildcard()" class="bg-[#FF7BAC] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#E0568F] transition flex flex-col items-center justify-center text-xs font-semibold cursor-pointer" title="Wildcard: Play Random Track">
                 <i class="fa-solid fa-shuffle mb-1 text-sm text-white"></i>
@@ -4378,9 +4379,25 @@
             alert(`Freed up ${formatBytes(freeableBytes)} across ${evictable.length} item(s).`);
         }
 
+        function isSupportedAudioFile(file) {
+            return !!inferAudioMimeType(file.name) || (file.type || '').startsWith('audio/');
+        }
+
         function handleLocalFiles(event) {
             const files = event.target.files;
             if (!files || files.length === 0) return;
+
+            // The picker has no accept filter (see the input's comment), so
+            // anything can come through here - keep only audio.
+            const allFiles = Array.from(files);
+            const audioFiles = allFiles.filter(isSupportedAudioFile);
+            const skipped = allFiles.filter(f => !isSupportedAudioFile(f));
+            // Cleared so picking the same file again still fires onchange.
+            event.target.value = '';
+            if (skipped.length > 0) {
+                alert(`Skipped ${skipped.length} file(s) that aren't a supported audio type (mp3, m4a, m4b, aac, wav, ogg):\n\n${skipped.map(f => f.name).join('\n')}`);
+            }
+            if (audioFiles.length === 0) return;
 
             // A multi-file picker hands files back in whatever order the OS
             // reports them - not guaranteed alphabetical, and even when it
@@ -4388,7 +4405,7 @@
             // Sort by filename with numeric-aware comparison so a batch of
             // numbered chapters/tracks lands in the library in the order a
             // person would actually read them.
-            const sortedFiles = Array.from(files).sort((a, b) =>
+            const sortedFiles = audioFiles.sort((a, b) =>
                 a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
             );
 
@@ -4398,13 +4415,14 @@
                 const url = URL.createObjectURL(source);
                 const baseName = file.name.replace(/\.[^/.]+$/, "");
                 const detected = parseAudioFilenameForTitleAuthor(file.name);
+                const isAudiobook = file.name.toLowerCase().endsWith('.m4b');
                 const newItem = {
                     id: generateItemId('item'),
                     title: detected.title || baseName,
-                    author: detected.author || (file.name.endsWith('.m4b') ? 'Audiobook' : 'Local Import'),
+                    author: detected.author || (isAudiobook ? 'Audiobook' : 'Local Import'),
                     url: url,
                     local: true,
-                    folder: file.name.endsWith('.m4b') ? 'Audiobooks' : '',
+                    folder: isAudiobook ? 'Audiobooks' : '',
                     cover: '',
                     tags: ['local', file.name.split('.').pop().toLowerCase()],
                     currentTime: 0,
@@ -4412,7 +4430,7 @@
                     speed: 1.0,
                     bookmarks: []
                 };
-                if (file.name.endsWith('.m4b') && !appState.folders.includes('Audiobooks')) {
+                if (isAudiobook && !appState.folders.includes('Audiobooks')) {
                     appState.folders.push('Audiobooks');
                     appState.folderColors['Audiobooks'] = '#3F8CB8';
                     saveFolderToCloud('Audiobooks');
