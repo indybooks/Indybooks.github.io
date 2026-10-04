@@ -24,7 +24,12 @@
     <link rel="apple-touch-icon" href="icon-512.png">
     <meta name="theme-color" content="#1B3F57">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <!-- Opaque, not black-translucent: on iOS 26, translucent + viewport-fit=cover
+         makes the home-screen app's view one status-bar height too short
+         (WebKit bug 301108), leaving a blank strip under the mini player that
+         CSS can't reach. iOS only reads this tag when the app is added to the
+         home screen, so existing installs must be removed and re-added. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <meta name="apple-mobile-web-app-title" content="IndyBooks">
     <style>
         :root {
@@ -60,41 +65,13 @@
            has no notch to reveal that; on an iPhone (especially installed to
            the home screen, where viewport-fit=cover applies) content was
            rendering straight under the status bar. */
+        /* max() keeps each element's own padding when there's no inset to
+           clear (opaque status bar, desktop) instead of zeroing it. */
         .pt-safe {
-            padding-top: env(safe-area-inset-top, 0px);
+            padding-top: max(var(--pt-base, 0px), env(safe-area-inset-top, 0px));
         }
         .pb-safe {
             padding-bottom: env(safe-area-inset-bottom, 0px);
-        }
-        /* All text ~15% larger. Overriding Tailwind's own theme variables
-           (rather than editing every text-* class site by hand) scales
-           every text-xs/sm/base/lg/xl/2xl/6xl use uniformly throughout the
-           app - including FontAwesome icons sized the same way, since an
-           icon glyph's rendered size is its font-size. Fixed-dimension
-           buttons (sized via w- and h- utilities, not text) are scaled individually at
-           their own class sites instead - overriding --spacing globally
-           would also inflate unrelated things sized off the same scale
-           (padding, gaps, cover art, modal widths), well beyond "buttons
-           and text". Deliberately NOT !important: Tailwind's theme
-           variables live in @layer theme, and this plain, unlayered :root
-           rule already outranks any layered one for normal-priority
-           declarations regardless of source order - that's what unlayered
-           styles are for. Adding !important here would do the opposite of
-           what it looks like: per the Cascade Layers spec, importance
-           reverses layer priority, so an !important on this unlayered rule
-           would actually lose to Tailwind's layered (but non-important)
-           one - confirmed by testing, since the override silently failed
-           to apply with !important present.
-           xs 12->13.8px, sm 14->16.1px, base 16->18.4px, lg 18->20.7px,
-           xl 20->23px, 2xl 24->27.6px, 6xl 60->69px. */
-        :root {
-            --text-xs: 0.8625rem;
-            --text-sm: 1.00625rem;
-            --text-base: 1.15rem;
-            --text-lg: 1.29375rem;
-            --text-xl: 1.4375rem;
-            --text-2xl: 1.725rem;
-            --text-6xl: 4.3125rem;
         }
         ::-webkit-scrollbar {
             width: 4px;
@@ -120,11 +97,11 @@
 <body class="h-full flex flex-col overflow-hidden relative">
 
     <!-- Header -->
-    <header class="bg-[#1B3F57] text-white px-4 py-3 flex items-center justify-between shadow-md shrink-0 pt-safe z-30">
+    <header class="bg-[#1B3F57] text-white px-4 py-2 [--pt-base:0.5rem] flex items-center justify-between shadow-md shrink-0 pt-safe z-30">
         <!-- min-w-0 lets this side shrink (and its text truncate) instead of
              shoving the button group past the right edge of the screen. -->
         <div class="flex items-center gap-2.5 flex-1 min-w-0">
-            <div id="header-app-icon" class="hidden min-[360px]:flex shrink-0 w-10 h-10 rounded-xl bg-[#FFDDA6] items-center justify-center shadow-inner overflow-hidden border-2 border-white/25 relative">
+            <div id="header-app-icon" class="hidden min-[360px]:flex shrink-0 w-9 h-9 rounded-xl bg-[#FFDDA6] items-center justify-center shadow-inner overflow-hidden border-2 border-white/25 relative">
                 <!-- Same logo used for the favicon and the mobile home-screen
                      icon (icon.svg / manifest.json) - previously this was a
                      separate, cruder hand-drawn puppy that didn't match. -->
@@ -136,53 +113,53 @@
                      the title: title + badge + four header buttons didn't fit
                      side by side on any phone narrower than ~420px. -->
                 <div class="flex items-center gap-1.5 min-w-0">
-                    <span id="sync-status-badge" class="shrink-0 text-[11.5px] bg-[#FF7BAC] text-white px-1.5 py-0.5 rounded-full font-medium">Local</span>
+                    <span id="sync-status-badge" class="shrink-0 text-[10.5px] bg-[#FF7BAC] text-white px-1.5 py-0.5 rounded-full font-medium">Local</span>
                     <p id="user-status-subtitle" class="text-xs text-[#FFDDA6] truncate min-w-0">Podcast & Audiobook Hub</p>
                 </div>
             </div>
         </div>
-        <div class="flex items-center gap-1.5 min-[400px]:gap-2 shrink-0 ml-2">
-            <button onclick="openQueueModal()" class="w-[38px] h-[38px] min-[400px]:w-[41px] min-[400px]:h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer relative" title="Play Queue">
+        <div class="flex items-center gap-1.5 shrink-0 ml-2">
+            <button onclick="openQueueModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer relative" title="Play Queue">
                 <i class="fa-solid fa-list-ol text-sm"></i>
-                <span id="queue-count-badge" class="hidden absolute -top-1 -right-1 bg-[#FF7BAC] text-white text-[10.5px] w-4 h-4 rounded-full flex items-center justify-center">0</span>
+                <span id="queue-count-badge" class="hidden absolute -top-1 -right-1 bg-[#FF7BAC] text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">0</span>
             </button>
-            <button onclick="openSearchModal()" class="w-[38px] h-[38px] min-[400px]:w-[41px] min-[400px]:h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Search">
+            <button onclick="openSearchModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Search">
                 <i class="fa-solid fa-search text-sm"></i>
             </button>
-            <button onclick="openAuthModal()" id="auth-header-btn" class="w-[38px] h-[38px] min-[400px]:w-[41px] min-[400px]:h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Supabase Cloud Account">
+            <button onclick="openAuthModal()" id="auth-header-btn" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Supabase Cloud Account">
                 <i class="fa-solid fa-cloud text-sm"></i>
             </button>
-            <button onclick="openSettingsModal()" class="w-[38px] h-[38px] min-[400px]:w-[41px] min-[400px]:h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Settings">
+            <button onclick="openSettingsModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Settings">
                 <i class="fa-solid fa-gear text-sm"></i>
             </button>
         </div>
     </header>
 
     <!-- Main Content Area -->
-    <main class="flex-1 overflow-y-auto px-4 py-4 pb-36 space-y-4">
+    <main class="flex-1 overflow-y-auto px-4 py-3 pb-28 space-y-3">
         
         <!-- Action Toolbar -->
-        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            <button onclick="openAddFeedModal()" class="bg-[#3F8CB8] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-xs font-semibold cursor-pointer">
-                <i class="fa-solid fa-rss mb-1 text-sm text-[#FFB452]"></i>
-                Add RSS Feed
+        <div class="grid grid-cols-5 gap-1.5">
+            <button onclick="openAddFeedModal()" title="Add RSS Feed" class="bg-[#3F8CB8] text-white py-2 px-1 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-[11px] leading-tight text-center font-semibold cursor-pointer">
+                <i class="fa-solid fa-rss mb-1 text-base text-[#FFB452]"></i>
+                RSS Feed
             </button>
-            <button onclick="openAddUrlModal()" class="bg-[#3F8CB8] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-xs font-semibold cursor-pointer">
-                <i class="fa-solid fa-link mb-1 text-sm text-[#FFB452]"></i>
-                Add Audio URL
+            <button onclick="openAddUrlModal()" title="Add Audio URL" class="bg-[#3F8CB8] text-white py-2 px-1 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-[11px] leading-tight text-center font-semibold cursor-pointer">
+                <i class="fa-solid fa-link mb-1 text-base text-[#FFB452]"></i>
+                Audio URL
             </button>
-            <label class="bg-[#3F8CB8] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-xs font-semibold cursor-pointer">
-                <i class="fa-solid fa-file-arrow-up mb-1 text-sm text-[#FFB452]"></i>
-                Upload Audio
+            <label class="bg-[#3F8CB8] text-white py-2 px-1 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-[11px] leading-tight text-center font-semibold cursor-pointer">
+                <i class="fa-solid fa-file-arrow-up mb-1 text-base text-[#FFB452]"></i>
+                Upload
                 <!-- No accept attribute on purpose: iOS turns the list into file-type filters that .m4b audiobooks don't match, so they show greyed out in the picker. handleLocalFiles() checks the type instead. -->
                 <input type="file" id="local-audio-input" multiple class="hidden" onchange="handleLocalFiles(event)">
             </label>
-            <button onclick="playWildcard()" class="bg-[#FF7BAC] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#E0568F] transition flex flex-col items-center justify-center text-xs font-semibold cursor-pointer" title="Wildcard: Play Random Track">
-                <i class="fa-solid fa-shuffle mb-1 text-sm text-white"></i>
+            <button onclick="playWildcard()" class="bg-[#FF7BAC] text-white py-2 px-1 rounded-xl shadow-sm hover:bg-[#E0568F] transition flex flex-col items-center justify-center text-[11px] leading-tight text-center font-semibold cursor-pointer" title="Wildcard: Play Random Track">
+                <i class="fa-solid fa-shuffle mb-1 text-base text-white"></i>
                 Wildcard
             </button>
-            <button onclick="openCreateFolderModal()" class="bg-[#3F8CB8] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-xs font-semibold col-span-2 sm:col-span-1 cursor-pointer">
-                <i class="fa-solid fa-folder-plus mb-1 text-sm text-[#FFB452]"></i>
+            <button onclick="openCreateFolderModal()" class="bg-[#3F8CB8] text-white py-2 px-1 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-[11px] leading-tight text-center font-semibold cursor-pointer">
+                <i class="fa-solid fa-folder-plus mb-1 text-base text-[#FFB452]"></i>
                 New Folder
             </button>
         </div>
@@ -208,14 +185,14 @@
         <div class="w-full bg-white/20 h-1.5 cursor-pointer relative" onclick="seekAudioBar(event)">
             <div id="mini-progress" class="bg-[#FFB452] h-full w-0 transition-all duration-150"></div>
         </div>
-        <div id="mini-sleep-timer-badge" class="hidden absolute top-2.5 right-3 bg-black/40 text-[10.5px] text-[#FFB452] pl-1.5 pr-2 py-0.5 rounded-full items-center gap-1 cursor-pointer z-10" onclick="event.stopPropagation(); openPlayerModal(); openSleepTimerModal();" title="Sleep timer active - tap to view">
+        <div id="mini-sleep-timer-badge" class="hidden absolute top-2.5 right-3 bg-black/40 text-[10px] text-[#FFB452] pl-1.5 pr-2 py-0.5 rounded-full items-center gap-1 cursor-pointer z-10" onclick="event.stopPropagation(); openPlayerModal(); openSleepTimerModal();" title="Sleep timer active - tap to view">
             <i class="fa-solid fa-moon"></i>
             <span id="mini-sleep-timer-text">0:00</span>
         </div>
 
-        <div class="px-4 py-3 flex items-center justify-between">
-            <div class="flex items-center space-x-3 flex-1 min-w-0 cursor-pointer" onclick="openPlayerModal()">
-                <div id="mini-cover" class="w-12 h-12 rounded-lg bg-[#3F8CB8] flex items-center justify-center overflow-hidden shrink-0 shadow">
+        <div class="px-4 py-2 flex items-center justify-between">
+            <div class="flex items-center space-x-2.5 flex-1 min-w-0 cursor-pointer" onclick="openPlayerModal()">
+                <div id="mini-cover" class="w-11 h-11 rounded-lg bg-[#3F8CB8] flex items-center justify-center overflow-hidden shrink-0 shadow">
                     <i class="fa-solid fa-headphones text-[#FFDDA6] text-xl"></i>
                 </div>
                 <div class="min-w-0 flex-1">
@@ -224,17 +201,17 @@
                 </div>
             </div>
 
-            <div class="flex items-center gap-2 min-[400px]:gap-3 ml-3 shrink-0">
-                <button id="sloth-mode-btn" onclick="toggleSlothMode()" title="Sloth Mode (0.5x Speed)" class="w-[41px] h-[41px] rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center transition cursor-pointer overflow-hidden">
-                    <img src="sloth-icon.png" alt="Sloth Mode" class="w-8 h-8 object-contain">
+            <div class="flex items-center gap-2 ml-2 shrink-0">
+                <button id="sloth-mode-btn" onclick="toggleSlothMode()" title="Sloth Mode (0.5x Speed)" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center transition cursor-pointer overflow-hidden">
+                    <img src="sloth-icon.png" alt="Sloth Mode" class="w-7 h-7 object-contain">
                 </button>
-                <button onclick="skipTime(-appState.skipBackwardSeconds)" title="Skip back" class="w-[41px] h-[41px] rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
+                <button onclick="skipTime(-appState.skipBackwardSeconds)" title="Skip back" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
                     <i class="fa-solid fa-rotate-left text-xs"></i>
                 </button>
-                <button id="mini-play-btn" onclick="togglePlayPause()" class="w-[51px] h-[51px] rounded-full bg-[#FFB452] text-[#1B3F57] flex items-center justify-center shadow-lg hover:scale-105 transition cursor-pointer">
+                <button id="mini-play-btn" onclick="togglePlayPause()" class="w-11 h-11 rounded-full bg-[#FFB452] text-[#1B3F57] flex items-center justify-center shadow-lg hover:scale-105 transition cursor-pointer">
                     <i class="fa-solid fa-play text-sm ml-0.5"></i>
                 </button>
-                <button onclick="skipTime(appState.skipForwardSeconds)" title="Skip forward" class="w-[41px] h-[41px] rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
+                <button onclick="skipTime(appState.skipForwardSeconds)" title="Skip forward" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
                     <i class="fa-solid fa-rotate-right text-xs"></i>
                 </button>
             </div>
@@ -250,17 +227,17 @@
          over the mini player's bottom-right corner. Visibility is part of
          the transition so it only flips to hidden once the slide-down ends. -->
     <div id="player-modal" class="fixed inset-0 bg-[#1B3F57] z-50 flex flex-col text-white transform translate-y-full invisible transition-[translate,visibility] duration-300">
-        <div class="px-4 py-4 flex items-center justify-between border-b border-white/10 pt-safe">
-            <button onclick="closePlayerModal()" class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center text-white cursor-pointer">
+        <div class="px-4 py-3 [--pt-base:0.75rem] flex items-center justify-between border-b border-white/10 pt-safe">
+            <button onclick="closePlayerModal()" class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white cursor-pointer">
                 <i class="fa-solid fa-chevron-down"></i>
             </button>
             <div class="text-center">
-                <span class="text-[11.5px] uppercase tracking-widest text-[#FFB452] font-bold">Now Playing</span>
+                <span class="text-[10.5px] uppercase tracking-widest text-[#FFB452] font-bold">Now Playing</span>
                 <h3 id="modal-org-title" class="text-xs text-[#FFDDA6] truncate max-w-[200px]">IndyBooks</h3>
             </div>
-            <button onclick="openBookmarksModal()" class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center text-white relative cursor-pointer">
+            <button onclick="openBookmarksModal()" class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white relative cursor-pointer">
                 <i class="fa-solid fa-bookmark"></i>
-                <span id="bookmark-count-badge" class="absolute -top-1 -right-1 bg-[#FF7BAC] text-white text-[10.5px] w-4 h-4 rounded-full flex items-center justify-center">0</span>
+                <span id="bookmark-count-badge" class="absolute -top-1 -right-1 bg-[#FF7BAC] text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">0</span>
             </button>
         </div>
 
@@ -269,7 +246,7 @@
              to - so the content is centred with my-auto on an inner wrapper
              instead, which falls back to top-aligned when it doesn't fit. -->
         <div class="flex-1 overflow-y-auto px-4 min-[400px]:px-6 py-6 flex flex-col">
-          <div class="my-auto shrink-0 w-full flex flex-col items-center space-y-6">
+          <div class="my-auto shrink-0 w-full flex flex-col items-center space-y-5">
             <div id="modal-cover-container" class="shrink-0 w-[min(16rem,70vw,34dvh)] h-[min(16rem,70vw,34dvh)] rounded-2xl bg-[#3F8CB8] shadow-2xl overflow-hidden flex items-center justify-center border-4 border-white/10 relative group">
                 <i class="fa-solid fa-headphones text-6xl text-[#FFDDA6]"></i>
             </div>
@@ -293,29 +270,29 @@
             </div>
 
             <div class="flex items-start justify-between w-full max-w-[400px]">
-                <button onclick="toggleSlothMode()" id="modal-sloth-btn" class="flex flex-col items-center text-[11.5px] leading-tight text-[#FFDDA6] hover:text-white transition cursor-pointer">
-                    <div id="modal-sloth-icon-circle" class="shrink-0 w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center mb-1 overflow-hidden transition">
-                        <img src="sloth-icon.png" alt="Sloth Mode" class="w-9 h-9 object-contain">
+                <button onclick="toggleSlothMode()" id="modal-sloth-btn" class="flex flex-col items-center text-[10.5px] leading-tight text-[#FFDDA6] hover:text-white transition cursor-pointer">
+                    <div id="modal-sloth-icon-circle" class="shrink-0 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center mb-1 overflow-hidden transition">
+                        <img src="sloth-icon.png" alt="Sloth Mode" class="w-8 h-8 object-contain">
                     </div>
                     Sloth Mode
                 </button>
                 <button onclick="skipTime(-appState.skipBackwardSeconds)" class="flex flex-col items-center gap-1 text-white cursor-pointer">
-                    <div class="w-[55px] h-[55px] rounded-full bg-white/10 hover:bg-white/20 transition flex items-center justify-center">
+                    <div class="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 transition flex items-center justify-center">
                         <i class="fa-solid fa-rotate-left"></i>
                     </div>
-                    <span id="skip-backward-label" class="text-[10.5px] text-[#FFDDA6]">15s</span>
+                    <span id="skip-backward-label" class="text-[10px] text-[#FFDDA6]">15s</span>
                 </button>
-                <button id="modal-play-btn" onclick="togglePlayPause()" class="shrink-0 w-[74px] h-[74px] rounded-full bg-[#FFB452] text-[#1B3F57] flex items-center justify-center shadow-xl hover:scale-105 transition text-xl cursor-pointer">
+                <button id="modal-play-btn" onclick="togglePlayPause()" class="shrink-0 w-16 h-16 rounded-full bg-[#FFB452] text-[#1B3F57] flex items-center justify-center shadow-xl hover:scale-105 transition text-xl cursor-pointer">
                     <i class="fa-solid fa-play ml-1"></i>
                 </button>
                 <button onclick="skipTime(appState.skipForwardSeconds)" class="flex flex-col items-center gap-1 text-white cursor-pointer">
-                    <div class="w-[55px] h-[55px] rounded-full bg-white/10 hover:bg-white/20 transition flex items-center justify-center">
+                    <div class="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 transition flex items-center justify-center">
                         <i class="fa-solid fa-rotate-right"></i>
                     </div>
-                    <span id="skip-forward-label" class="text-[10.5px] text-[#FFDDA6]">30s</span>
+                    <span id="skip-forward-label" class="text-[10px] text-[#FFDDA6]">30s</span>
                 </button>
-                <button onclick="addBookmark()" class="flex flex-col items-center text-[11.5px] leading-tight text-[#FFDDA6] hover:text-white transition cursor-pointer">
-                    <div class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center text-[#FFB452] mb-1">
+                <button onclick="addBookmark()" class="flex flex-col items-center text-[10.5px] leading-tight text-[#FFDDA6] hover:text-white transition cursor-pointer">
+                    <div class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-[#FFB452] mb-1">
                         <i class="fa-solid fa-bookmark"></i>
                     </div>
                     Bookmark
@@ -406,14 +383,14 @@
                         <button onclick="supabaseSignIn()" class="flex-1 py-2 bg-[#1B3F57] text-white rounded-xl text-xs font-semibold cursor-pointer">Sign In</button>
                         <button onclick="supabaseSignUp()" class="flex-1 py-2 bg-gray-100 text-[#1B3F57] hover:bg-gray-200 rounded-xl text-xs font-semibold cursor-pointer">Sign Up</button>
                     </div>
-                    <p class="text-[10.5px] text-gray-400 mt-1">Unchecked, you'll need to sign in again next time you fully close the app - safer on a shared or public device.</p>
+                    <p class="text-[10px] text-gray-400 mt-1">Unchecked, you'll need to sign in again next time you fully close the app - safer on a shared or public device.</p>
                 </div>
             </div>
             <div id="auth-logged-view" class="space-y-3 hidden">
                 <div class="p-3 bg-green-50 text-green-800 rounded-xl text-xs flex items-center justify-between">
                     <div>
                         <p class="font-bold">Connected to Supabase</p>
-                        <p id="auth-user-email" class="text-[11.5px] text-green-700"></p>
+                        <p id="auth-user-email" class="text-[10.5px] text-green-700"></p>
                     </div>
                     <i class="fa-solid fa-cloud-arrow-up text-lg text-green-600"></i>
                 </div>
@@ -447,7 +424,7 @@
                 <div class="p-3 bg-[#FFDDA6]/30 text-[#1B3F57] rounded-xl text-xs flex items-center justify-between">
                     <div>
                         <p class="font-bold">Goodreads Connected</p>
-                        <p id="goodreads-account-display" class="text-[11.5px] text-gray-600"></p>
+                        <p id="goodreads-account-display" class="text-[10.5px] text-gray-600"></p>
                     </div>
                     <i class="fa-solid fa-book-open text-lg text-[#3F8CB8]"></i>
                 </div>
@@ -1135,13 +1112,13 @@
                 loggedView.classList.remove('hidden');
                 document.getElementById('auth-user-email').innerText = currentUser.email;
                 badge.innerText = 'Synced';
-                badge.className = 'shrink-0 text-[11.5px] bg-green-600 text-white px-1.5 py-0.5 rounded-full font-medium';
+                badge.className = 'shrink-0 text-[10.5px] bg-green-600 text-white px-1.5 py-0.5 rounded-full font-medium';
                 sub.innerText = `Cloud Account: ${currentUser.email}`;
             } else {
                 unloggedView.classList.remove('hidden');
                 loggedView.classList.add('hidden');
                 badge.innerText = 'Local';
-                badge.className = 'shrink-0 text-[11.5px] bg-[#FF7BAC] text-white px-1.5 py-0.5 rounded-full font-medium';
+                badge.className = 'shrink-0 text-[10.5px] bg-[#FF7BAC] text-white px-1.5 py-0.5 rounded-full font-medium';
                 sub.innerText = 'Podcast & Audiobook Hub';
             }
         }
@@ -2825,8 +2802,8 @@
             return `
                 <div class="cursor-pointer" onclick="openFolderView('${folderName}')">
                     <div class="relative aspect-square rounded-2xl shadow-sm overflow-hidden flex items-center justify-center" style="background-color: ${color}">
-                        ${cover ? `<img src="${cover}" class="w-full h-full object-cover">` : '<i class="fa-solid fa-folder text-4xl text-white/85"></i>'}
-                        ${count > 0 ? `<span class="absolute top-1.5 right-1.5 min-w-[20px] h-5 px-1.5 rounded-full bg-black/55 text-white text-[10.5px] font-bold flex items-center justify-center">${count}</span>` : ''}
+                        ${cover ? `<img src="${cover}" class="w-full h-full object-cover">` : '<i class="fa-solid fa-folder text-3xl text-white/85"></i>'}
+                        ${count > 0 ? `<span class="absolute top-1.5 right-1.5 min-w-[20px] h-5 px-1.5 rounded-full bg-black/55 text-white text-[10px] font-bold flex items-center justify-center">${count}</span>` : ''}
                     </div>
                     <p class="mt-1.5 text-xs font-semibold text-[#1B3F57] truncate text-center">${folderName}</p>
                 </div>
@@ -2835,7 +2812,7 @@
 
         function renderFolderGrid(folderNames) {
             if (folderNames.length === 0) return '';
-            return `<div class="grid grid-cols-3 sm:grid-cols-4 gap-x-3 gap-y-4">${folderNames.map(renderFolderTile).join('')}</div>`;
+            return `<div class="grid grid-cols-3 min-[360px]:grid-cols-4 sm:grid-cols-5 gap-x-2.5 gap-y-3">${folderNames.map(renderFolderTile).join('')}</div>`;
         }
 
         function renderLibrary() {
@@ -2868,7 +2845,7 @@
                 const subFolders = folderChildrenOf(folder);
 
                 const headerCard = document.createElement('div');
-                headerCard.className = 'bg-white rounded-2xl shadow-sm border border-gray-100 p-3 flex items-center justify-between gap-2';
+                headerCard.className = 'bg-white rounded-2xl shadow-sm border border-gray-100 px-2 py-1.5 flex items-center justify-between gap-2';
                 headerCard.innerHTML = `
                     <div class="flex items-center gap-2 min-w-0">
                         <button onclick="goBackFolder()" class="shrink-0 w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-[#1B3F57] cursor-pointer" title="Back">
@@ -2935,7 +2912,7 @@
             const bar = document.createElement('div');
             bar.className = 'flex items-center px-1';
             bar.innerHTML = `
-                <label class="flex items-center gap-2 text-[11.5px] text-gray-500 cursor-pointer select-none">
+                <label class="flex items-center gap-2 text-[10.5px] text-gray-500 cursor-pointer select-none">
                     <input type="checkbox" ${allSelected ? 'checked' : ''} onclick="selectAllVisibleItems()" class="w-3.5 h-3.5 accent-[#3F8CB8] rounded cursor-pointer">
                     Select All
                 </label>
@@ -2948,7 +2925,7 @@
             const timeRemaining = item.duration ? formatTime(item.duration - item.currentTime) : '--:--';
             const isCurrent = appState.currentId === item.id;
             const isChecked = appState.selectedItemIds.includes(item.id);
-            const tagsHtml = item.tags && item.tags.length > 0 ? item.tags.map(t => `<span class="text-[10.5px] bg-gray-100 text-[#3F8CB8] px-1.5 py-0.5 rounded-md font-medium">#${t.trim()}</span>`).join(' ') : '';
+            const tagsHtml = item.tags && item.tags.length > 0 ? item.tags.map(t => `<span class="text-[10px] bg-gray-100 text-[#3F8CB8] px-1.5 py-0.5 rounded-md font-medium">#${t.trim()}</span>`).join(' ') : '';
             // The foreground needs a fully OPAQUE background of its own now
             // - it sits directly in front of the red Delete reveal layer,
             // not just the shared list container. The previous highlight
@@ -2970,30 +2947,30 @@
                             <span class="text-[10px] font-semibold">Delete</span>
                         </div>
                     </div>
-                    <div class="relative p-3 flex items-center justify-between hover:bg-gray-50/80 transition ${rowBg}" data-item-swipe-foreground data-swipe-offset="0" onpointerdown="startItemSwipe('${item.id}', event)">
-                        <div class="drag-handle shrink-0 mr-4 w-8 h-10 flex items-center justify-center text-gray-400 hover:text-[#3F8CB8] active:text-[#3F8CB8] cursor-grab active:cursor-grabbing touch-none select-none" title="Drag to reorder" onpointerdown="startItemDrag('${item.id}', event)">
+                    <div class="relative py-2.5 pl-1.5 pr-2 flex items-center justify-between hover:bg-gray-50/80 transition ${rowBg}" data-item-swipe-foreground data-swipe-offset="0" onpointerdown="startItemSwipe('${item.id}', event)">
+                        <div class="drag-handle shrink-0 mr-1 w-7 h-10 flex items-center justify-center text-gray-400 hover:text-[#3F8CB8] active:text-[#3F8CB8] cursor-grab active:cursor-grabbing touch-none select-none" title="Drag to reorder" onpointerdown="startItemDrag('${item.id}', event)">
                             <i class="fa-solid fa-grip-vertical text-sm"></i>
                         </div>
-                        <div class="flex items-center space-x-3 flex-1 min-w-0 cursor-pointer" onclick="playItem('${item.id}')">
+                        <div class="flex items-center space-x-2.5 flex-1 min-w-0 cursor-pointer" onclick="playItem('${item.id}')">
                             <input type="checkbox" ${isChecked ? 'checked' : ''} onclick="toggleItemSelection('${item.id}', event)" class="w-4 h-4 accent-[#3F8CB8] rounded cursor-pointer shrink-0">
-                            <div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0 shadow-sm flex items-center justify-center">
+                            <div class="w-11 h-11 rounded-lg bg-gray-100 overflow-hidden shrink-0 shadow-sm flex items-center justify-center">
                                 ${item.cover ? `<img src="${item.cover}" class="w-full h-full object-cover">` : '<i class="fa-solid fa-music text-gray-400"></i>'}
                             </div>
                             <div class="min-w-0 flex-1">
-                                <h4 class="text-xs font-bold text-[#1B3F57] truncate">${item.title}</h4>
-                                <p class="text-[12.5px] text-gray-600 truncate">${item.author || 'Unknown Author'}${item.subTracks && item.subTracks.length > 0 ? ` • ${item.subTracks.length} tracks` : ''}</p>
+                                <h4 class="text-sm font-bold text-[#1B3F57] truncate">${item.title}</h4>
+                                <p class="text-xs text-gray-600 truncate">${item.author || 'Unknown Author'}${item.subTracks && item.subTracks.length > 0 ? ` • ${item.subTracks.length} tracks` : ''}</p>
                                 <div class="flex items-center space-x-2 mt-1">
                                     <div class="flex-1 bg-gray-200 h-1.5 rounded-full overflow-hidden max-w-[180px]">
                                         <div class="bg-[#3F8CB8] h-full" style="width: ${pct}%"></div>
                                     </div>
-                                    <span class="text-[11.5px] text-gray-500">${pct}% • ${timeRemaining}</span>
+                                    <span class="text-[10.5px] text-gray-500">${pct}% • ${timeRemaining}</span>
                                 </div>
                                 ${tagsHtml ? `<div class="flex flex-wrap gap-1 mt-1.5">${tagsHtml}</div>` : ''}
                             </div>
                         </div>
-                        <div class="flex items-center space-x-1 ml-2">
-                            <button onclick="addToQueue('${item.id}', event)" class="w-[37px] h-[37px] rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Add to Queue"><i class="fa-solid fa-list-ol text-xs"></i></button>
-                            <button onclick="openEditModal('${item.id}')" class="w-[37px] h-[37px] rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Edit"><i class="fa-solid fa-ellipsis-vertical text-xs"></i></button>
+                        <div class="flex items-center ml-1 shrink-0">
+                            <button onclick="addToQueue('${item.id}', event)" class="w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Add to Queue"><i class="fa-solid fa-list-ol text-xs"></i></button>
+                            <button onclick="openEditModal('${item.id}')" class="w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Edit"><i class="fa-solid fa-ellipsis-vertical text-xs"></i></button>
                         </div>
                     </div>
                 </div>
@@ -4557,7 +4534,7 @@
                             </div>
                             ${canFree
                                 ? `<button onclick="evictItemCache('${item.id}')" class="shrink-0 px-3 py-1.5 bg-gray-100 text-[#1B3F57] hover:bg-gray-200 rounded-lg text-[11px] font-semibold cursor-pointer">Free Up</button>`
-                                : `<span class="shrink-0 text-[10.5px] text-gray-400 italic px-1">${isCurrent ? 'In use' : 'Local only'}</span>`}
+                                : `<span class="shrink-0 text-[10px] text-gray-400 italic px-1">${isCurrent ? 'In use' : 'Local only'}</span>`}
                         </div>
                     `;
                 }).join('');
@@ -5499,7 +5476,7 @@
                 <div class="py-2.5 flex items-center justify-between gap-2">
                     <div class="min-w-0">
                         <h5 class="text-xs font-bold text-[#1B3F57] truncate">${b.title}</h5>
-                        <span class="text-[11.5px] text-gray-400">${formatTime(b.time)}</span>
+                        <span class="text-[10.5px] text-gray-400">${formatTime(b.time)}</span>
                     </div>
                     <div class="flex items-center gap-1 shrink-0">
                         <button onclick="audioEl.currentTime = ${b.time}; closeModals();" class="px-3 py-1 bg-[#3F8CB8] text-white text-xs rounded-lg cursor-pointer">Jump</button>
@@ -5590,12 +5567,12 @@
                 return `
                 <div class="py-2.5 flex items-center justify-between gap-2">
                     <div class="flex flex-col shrink-0 rounded-lg bg-[#3F8CB8]/10 overflow-hidden">
-                        <button onclick="moveQueueItem(${idx}, 'up')" ${idx === 0 ? 'disabled' : ''} class="w-[28px] h-[23px] flex items-center justify-center text-[#3F8CB8] hover:bg-[#3F8CB8]/25 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"><i class="fa-solid fa-chevron-up text-[11.5px]"></i></button>
-                        <button onclick="moveQueueItem(${idx}, 'down')" ${idx === appState.queue.length - 1 ? 'disabled' : ''} class="w-[28px] h-[23px] flex items-center justify-center text-[#3F8CB8] hover:bg-[#3F8CB8]/25 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"><i class="fa-solid fa-chevron-down text-[11.5px]"></i></button>
+                        <button onclick="moveQueueItem(${idx}, 'up')" ${idx === 0 ? 'disabled' : ''} class="w-[28px] h-[23px] flex items-center justify-center text-[#3F8CB8] hover:bg-[#3F8CB8]/25 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"><i class="fa-solid fa-chevron-up text-[10.5px]"></i></button>
+                        <button onclick="moveQueueItem(${idx}, 'down')" ${idx === appState.queue.length - 1 ? 'disabled' : ''} class="w-[28px] h-[23px] flex items-center justify-center text-[#3F8CB8] hover:bg-[#3F8CB8]/25 disabled:opacity-20 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default transition"><i class="fa-solid fa-chevron-down text-[10.5px]"></i></button>
                     </div>
                     <div class="min-w-0 flex-1 cursor-pointer" onclick="playQueueItemNow(${idx})">
                         <h5 class="text-xs font-bold text-[#1B3F57] truncate">${item.title}</h5>
-                        <span class="text-[11.5px] text-gray-400 truncate">${item.author || 'Unknown Author'}</span>
+                        <span class="text-[10.5px] text-gray-400 truncate">${item.author || 'Unknown Author'}</span>
                     </div>
                     <button onclick="removeFromQueue(${idx})" class="w-8 h-8 rounded-full hover:bg-red-50 flex items-center justify-center text-red-500 cursor-pointer shrink-0" title="Remove from queue"><i class="fa-solid fa-xmark text-xs"></i></button>
                 </div>
@@ -5820,12 +5797,12 @@
                 if (i.tags) i.tags.forEach(t => allTags.add(t));
             });
             if (allTags.size === 0) {
-                cloud.innerHTML = '<span class="text-[11.5px] text-gray-400 italic">No tags created yet. Add tags in Edit Details.</span>';
+                cloud.innerHTML = '<span class="text-[10.5px] text-gray-400 italic">No tags created yet. Add tags in Edit Details.</span>';
                 return;
             }
             let html = '';
             allTags.forEach(tag => {
-                html += `<button onclick="filterByTag('${tag}')" class="text-[11.5px] bg-[#FFDDA6]/40 text-[#1B3F57] px-2 py-1 rounded-lg font-semibold hover:bg-[#FFDDA6] cursor-pointer">#${tag}</button>`;
+                html += `<button onclick="filterByTag('${tag}')" class="text-[10.5px] bg-[#FFDDA6]/40 text-[#1B3F57] px-2 py-1 rounded-lg font-semibold hover:bg-[#FFDDA6] cursor-pointer">#${tag}</button>`;
             });
             cloud.innerHTML = html;
         }
@@ -5849,7 +5826,7 @@
             results.innerHTML = matches.length === 0 ? '<div class="text-xs text-gray-400 text-center py-4">No results found</div>' : matches.map(m => `
                 <div class="p-2 hover:bg-gray-50 rounded-xl cursor-pointer flex items-center justify-between" onclick="playItem('${m.id}'); closeModals();">
                     <span class="text-xs font-semibold text-[#1B3F57] truncate">${m.title}</span>
-                    <span class="text-[11.5px] text-gray-400">${m.folder || 'Ungrouped'}</span>
+                    <span class="text-[10.5px] text-gray-400">${m.folder || 'Ungrouped'}</span>
                 </div>
             `).join('');
         }
