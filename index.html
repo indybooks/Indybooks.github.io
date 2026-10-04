@@ -97,11 +97,11 @@
 <body class="h-full flex flex-col overflow-hidden relative">
 
     <!-- Header -->
-    <header class="bg-[#1B3F57] text-white px-4 py-2 [--pt-base:0.5rem] flex items-center justify-between shadow-md shrink-0 pt-safe z-30">
+    <header class="bg-[#1B3F57] text-white px-4 py-3 [--pt-base:0.75rem] flex items-center justify-between shadow-md shrink-0 pt-safe z-30">
         <!-- min-w-0 lets this side shrink (and its text truncate) instead of
              shoving the button group past the right edge of the screen. -->
         <div class="flex items-center gap-2.5 flex-1 min-w-0">
-            <div id="header-app-icon" class="hidden min-[360px]:flex shrink-0 w-9 h-9 rounded-xl bg-[#FFDDA6] items-center justify-center shadow-inner overflow-hidden border-2 border-white/25 relative">
+            <div id="header-app-icon" class="hidden min-[360px]:flex shrink-0 w-10 h-10 rounded-xl bg-[#FFDDA6] items-center justify-center shadow-inner overflow-hidden border-2 border-white/25 relative">
                 <!-- Same logo used for the favicon and the mobile home-screen
                      icon (icon.svg / manifest.json) - previously this was a
                      separate, cruder hand-drawn puppy that didn't match. -->
@@ -118,48 +118,48 @@
                 </div>
             </div>
         </div>
-        <div class="flex items-center gap-1.5 shrink-0 ml-2">
-            <button onclick="openQueueModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer relative" title="Play Queue">
+        <div class="flex items-center gap-1.5 min-[400px]:gap-2 shrink-0 ml-2">
+            <button onclick="openQueueModal()" class="w-[38px] h-[38px] min-[400px]:w-[41px] min-[400px]:h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer relative" title="Play Queue">
                 <i class="fa-solid fa-list-ol text-sm"></i>
                 <span id="queue-count-badge" class="hidden absolute -top-1 -right-1 bg-[#FF7BAC] text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">0</span>
             </button>
-            <button onclick="openSearchModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Search">
+            <button onclick="openSearchModal()" class="w-[38px] h-[38px] min-[400px]:w-[41px] min-[400px]:h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Search">
                 <i class="fa-solid fa-search text-sm"></i>
             </button>
-            <button onclick="openAuthModal()" id="auth-header-btn" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Supabase Cloud Account">
+            <button onclick="openAuthModal()" id="auth-header-btn" class="w-[38px] h-[38px] min-[400px]:w-[41px] min-[400px]:h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Supabase Cloud Account">
                 <i class="fa-solid fa-cloud text-sm"></i>
             </button>
-            <button onclick="openSettingsModal()" class="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Settings">
+            <button onclick="openSettingsModal()" class="w-[38px] h-[38px] min-[400px]:w-[41px] min-[400px]:h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Settings">
                 <i class="fa-solid fa-gear text-sm"></i>
             </button>
         </div>
     </header>
 
     <!-- Main Content Area -->
-    <main class="flex-1 overflow-y-auto px-4 py-3 pb-28 space-y-3">
+    <main class="flex-1 overflow-y-auto px-4 py-4 pb-36 space-y-4">
         
         <!-- Action Toolbar -->
-        <div class="grid grid-cols-5 gap-1.5">
-            <button onclick="openAddFeedModal()" title="Add RSS Feed" class="bg-[#3F8CB8] text-white py-2 px-1 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-[11px] leading-tight text-center font-semibold cursor-pointer">
-                <i class="fa-solid fa-rss mb-1 text-base text-[#FFB452]"></i>
-                RSS Feed
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <button onclick="openAddFeedModal()" class="bg-[#3F8CB8] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-xs font-semibold cursor-pointer">
+                <i class="fa-solid fa-rss mb-1 text-sm text-[#FFB452]"></i>
+                Add RSS Feed
             </button>
-            <button onclick="openAddUrlModal()" title="Add Audio URL" class="bg-[#3F8CB8] text-white py-2 px-1 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-[11px] leading-tight text-center font-semibold cursor-pointer">
-                <i class="fa-solid fa-link mb-1 text-base text-[#FFB452]"></i>
-                Audio URL
+            <button onclick="openAddUrlModal()" class="bg-[#3F8CB8] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-xs font-semibold cursor-pointer">
+                <i class="fa-solid fa-link mb-1 text-sm text-[#FFB452]"></i>
+                Add Audio URL
             </button>
-            <label class="bg-[#3F8CB8] text-white py-2 px-1 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-[11px] leading-tight text-center font-semibold cursor-pointer">
-                <i class="fa-solid fa-file-arrow-up mb-1 text-base text-[#FFB452]"></i>
-                Upload
+            <label class="bg-[#3F8CB8] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-xs font-semibold cursor-pointer">
+                <i class="fa-solid fa-file-arrow-up mb-1 text-sm text-[#FFB452]"></i>
+                Upload Audio
                 <!-- No accept attribute on purpose: iOS turns the list into file-type filters that .m4b audiobooks don't match, so they show greyed out in the picker. handleLocalFiles() checks the type instead. -->
                 <input type="file" id="local-audio-input" multiple class="hidden" onchange="handleLocalFiles(event)">
             </label>
-            <button onclick="playWildcard()" class="bg-[#FF7BAC] text-white py-2 px-1 rounded-xl shadow-sm hover:bg-[#E0568F] transition flex flex-col items-center justify-center text-[11px] leading-tight text-center font-semibold cursor-pointer" title="Wildcard: Play Random Track">
-                <i class="fa-solid fa-shuffle mb-1 text-base text-white"></i>
+            <button onclick="playWildcard()" class="bg-[#FF7BAC] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#E0568F] transition flex flex-col items-center justify-center text-xs font-semibold cursor-pointer" title="Wildcard: Play Random Track">
+                <i class="fa-solid fa-shuffle mb-1 text-sm text-white"></i>
                 Wildcard
             </button>
-            <button onclick="openCreateFolderModal()" class="bg-[#3F8CB8] text-white py-2 px-1 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-[11px] leading-tight text-center font-semibold cursor-pointer">
-                <i class="fa-solid fa-folder-plus mb-1 text-base text-[#FFB452]"></i>
+            <button onclick="openCreateFolderModal()" class="bg-[#3F8CB8] text-white py-2.5 px-3 rounded-xl shadow-sm hover:bg-[#1B3F57] transition flex flex-col items-center justify-center text-xs font-semibold col-span-2 sm:col-span-1 cursor-pointer">
+                <i class="fa-solid fa-folder-plus mb-1 text-sm text-[#FFB452]"></i>
                 New Folder
             </button>
         </div>
@@ -190,9 +190,9 @@
             <span id="mini-sleep-timer-text">0:00</span>
         </div>
 
-        <div class="px-4 py-2 flex items-center justify-between">
-            <div class="flex items-center space-x-2.5 flex-1 min-w-0 cursor-pointer" onclick="openPlayerModal()">
-                <div id="mini-cover" class="w-11 h-11 rounded-lg bg-[#3F8CB8] flex items-center justify-center overflow-hidden shrink-0 shadow">
+        <div class="px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center space-x-3 flex-1 min-w-0 cursor-pointer" onclick="openPlayerModal()">
+                <div id="mini-cover" class="w-12 h-12 rounded-lg bg-[#3F8CB8] flex items-center justify-center overflow-hidden shrink-0 shadow">
                     <i class="fa-solid fa-headphones text-[#FFDDA6] text-xl"></i>
                 </div>
                 <div class="min-w-0 flex-1">
@@ -201,17 +201,17 @@
                 </div>
             </div>
 
-            <div class="flex items-center gap-2 ml-2 shrink-0">
-                <button id="sloth-mode-btn" onclick="toggleSlothMode()" title="Sloth Mode (0.5x Speed)" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center transition cursor-pointer overflow-hidden">
-                    <img src="sloth-icon.png" alt="Sloth Mode" class="w-7 h-7 object-contain">
+            <div class="flex items-center gap-2 min-[400px]:gap-3 ml-3 shrink-0">
+                <button id="sloth-mode-btn" onclick="toggleSlothMode()" title="Sloth Mode (0.5x Speed)" class="w-[41px] h-[41px] rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center transition cursor-pointer overflow-hidden">
+                    <img src="sloth-icon.png" alt="Sloth Mode" class="w-8 h-8 object-contain">
                 </button>
-                <button onclick="skipTime(-appState.skipBackwardSeconds)" title="Skip back" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
+                <button onclick="skipTime(-appState.skipBackwardSeconds)" title="Skip back" class="w-[41px] h-[41px] rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
                     <i class="fa-solid fa-rotate-left text-xs"></i>
                 </button>
-                <button id="mini-play-btn" onclick="togglePlayPause()" class="w-11 h-11 rounded-full bg-[#FFB452] text-[#1B3F57] flex items-center justify-center shadow-lg hover:scale-105 transition cursor-pointer">
+                <button id="mini-play-btn" onclick="togglePlayPause()" class="w-[51px] h-[51px] rounded-full bg-[#FFB452] text-[#1B3F57] flex items-center justify-center shadow-lg hover:scale-105 transition cursor-pointer">
                     <i class="fa-solid fa-play text-sm ml-0.5"></i>
                 </button>
-                <button onclick="skipTime(appState.skipForwardSeconds)" title="Skip forward" class="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
+                <button onclick="skipTime(appState.skipForwardSeconds)" title="Skip forward" class="w-[41px] h-[41px] rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition cursor-pointer">
                     <i class="fa-solid fa-rotate-right text-xs"></i>
                 </button>
             </div>
@@ -227,15 +227,15 @@
          over the mini player's bottom-right corner. Visibility is part of
          the transition so it only flips to hidden once the slide-down ends. -->
     <div id="player-modal" class="fixed inset-0 bg-[#1B3F57] z-50 flex flex-col text-white transform translate-y-full invisible transition-[translate,visibility] duration-300">
-        <div class="px-4 py-3 [--pt-base:0.75rem] flex items-center justify-between border-b border-white/10 pt-safe">
-            <button onclick="closePlayerModal()" class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white cursor-pointer">
+        <div class="px-4 py-4 [--pt-base:1rem] flex items-center justify-between border-b border-white/10 pt-safe">
+            <button onclick="closePlayerModal()" class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center text-white cursor-pointer">
                 <i class="fa-solid fa-chevron-down"></i>
             </button>
             <div class="text-center">
                 <span class="text-[10.5px] uppercase tracking-widest text-[#FFB452] font-bold">Now Playing</span>
                 <h3 id="modal-org-title" class="text-xs text-[#FFDDA6] truncate max-w-[200px]">IndyBooks</h3>
             </div>
-            <button onclick="openBookmarksModal()" class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white relative cursor-pointer">
+            <button onclick="openBookmarksModal()" class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center text-white relative cursor-pointer">
                 <i class="fa-solid fa-bookmark"></i>
                 <span id="bookmark-count-badge" class="absolute -top-1 -right-1 bg-[#FF7BAC] text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center">0</span>
             </button>
@@ -246,7 +246,7 @@
              to - so the content is centred with my-auto on an inner wrapper
              instead, which falls back to top-aligned when it doesn't fit. -->
         <div class="flex-1 overflow-y-auto px-4 min-[400px]:px-6 py-6 flex flex-col">
-          <div class="my-auto shrink-0 w-full flex flex-col items-center space-y-5">
+          <div class="my-auto shrink-0 w-full flex flex-col items-center space-y-6">
             <div id="modal-cover-container" class="shrink-0 w-[min(16rem,70vw,34dvh)] h-[min(16rem,70vw,34dvh)] rounded-2xl bg-[#3F8CB8] shadow-2xl overflow-hidden flex items-center justify-center border-4 border-white/10 relative group">
                 <i class="fa-solid fa-headphones text-6xl text-[#FFDDA6]"></i>
             </div>
@@ -271,28 +271,28 @@
 
             <div class="flex items-start justify-between w-full max-w-[400px]">
                 <button onclick="toggleSlothMode()" id="modal-sloth-btn" class="flex flex-col items-center text-[10.5px] leading-tight text-[#FFDDA6] hover:text-white transition cursor-pointer">
-                    <div id="modal-sloth-icon-circle" class="shrink-0 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center mb-1 overflow-hidden transition">
-                        <img src="sloth-icon.png" alt="Sloth Mode" class="w-8 h-8 object-contain">
+                    <div id="modal-sloth-icon-circle" class="shrink-0 w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center mb-1 overflow-hidden transition">
+                        <img src="sloth-icon.png" alt="Sloth Mode" class="w-9 h-9 object-contain">
                     </div>
                     Sloth Mode
                 </button>
                 <button onclick="skipTime(-appState.skipBackwardSeconds)" class="flex flex-col items-center gap-1 text-white cursor-pointer">
-                    <div class="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 transition flex items-center justify-center">
+                    <div class="w-[55px] h-[55px] rounded-full bg-white/10 hover:bg-white/20 transition flex items-center justify-center">
                         <i class="fa-solid fa-rotate-left"></i>
                     </div>
                     <span id="skip-backward-label" class="text-[10px] text-[#FFDDA6]">15s</span>
                 </button>
-                <button id="modal-play-btn" onclick="togglePlayPause()" class="shrink-0 w-16 h-16 rounded-full bg-[#FFB452] text-[#1B3F57] flex items-center justify-center shadow-xl hover:scale-105 transition text-xl cursor-pointer">
+                <button id="modal-play-btn" onclick="togglePlayPause()" class="shrink-0 w-[74px] h-[74px] rounded-full bg-[#FFB452] text-[#1B3F57] flex items-center justify-center shadow-xl hover:scale-105 transition text-xl cursor-pointer">
                     <i class="fa-solid fa-play ml-1"></i>
                 </button>
                 <button onclick="skipTime(appState.skipForwardSeconds)" class="flex flex-col items-center gap-1 text-white cursor-pointer">
-                    <div class="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 transition flex items-center justify-center">
+                    <div class="w-[55px] h-[55px] rounded-full bg-white/10 hover:bg-white/20 transition flex items-center justify-center">
                         <i class="fa-solid fa-rotate-right"></i>
                     </div>
                     <span id="skip-forward-label" class="text-[10px] text-[#FFDDA6]">30s</span>
                 </button>
                 <button onclick="addBookmark()" class="flex flex-col items-center text-[10.5px] leading-tight text-[#FFDDA6] hover:text-white transition cursor-pointer">
-                    <div class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-[#FFB452] mb-1">
+                    <div class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center text-[#FFB452] mb-1">
                         <i class="fa-solid fa-bookmark"></i>
                     </div>
                     Bookmark
@@ -2802,7 +2802,7 @@
             return `
                 <div class="cursor-pointer" onclick="openFolderView('${folderName}')">
                     <div class="relative aspect-square rounded-2xl shadow-sm overflow-hidden flex items-center justify-center" style="background-color: ${color}">
-                        ${cover ? `<img src="${cover}" class="w-full h-full object-cover">` : '<i class="fa-solid fa-folder text-3xl text-white/85"></i>'}
+                        ${cover ? `<img src="${cover}" class="w-full h-full object-cover">` : '<i class="fa-solid fa-folder text-4xl text-white/85"></i>'}
                         ${count > 0 ? `<span class="absolute top-1.5 right-1.5 min-w-[20px] h-5 px-1.5 rounded-full bg-black/55 text-white text-[10px] font-bold flex items-center justify-center">${count}</span>` : ''}
                     </div>
                     <p class="mt-1.5 text-xs font-semibold text-[#1B3F57] truncate text-center">${folderName}</p>
@@ -2812,7 +2812,7 @@
 
         function renderFolderGrid(folderNames) {
             if (folderNames.length === 0) return '';
-            return `<div class="grid grid-cols-3 min-[360px]:grid-cols-4 sm:grid-cols-5 gap-x-2.5 gap-y-3">${folderNames.map(renderFolderTile).join('')}</div>`;
+            return `<div class="grid grid-cols-3 sm:grid-cols-4 gap-x-3 gap-y-4">${folderNames.map(renderFolderTile).join('')}</div>`;
         }
 
         function renderLibrary() {
@@ -2845,7 +2845,7 @@
                 const subFolders = folderChildrenOf(folder);
 
                 const headerCard = document.createElement('div');
-                headerCard.className = 'bg-white rounded-2xl shadow-sm border border-gray-100 px-2 py-1.5 flex items-center justify-between gap-2';
+                headerCard.className = 'bg-white rounded-2xl shadow-sm border border-gray-100 p-3 flex items-center justify-between gap-2';
                 headerCard.innerHTML = `
                     <div class="flex items-center gap-2 min-w-0">
                         <button onclick="goBackFolder()" class="shrink-0 w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-[#1B3F57] cursor-pointer" title="Back">
@@ -2947,18 +2947,18 @@
                             <span class="text-[10px] font-semibold">Delete</span>
                         </div>
                     </div>
-                    <div class="relative py-2.5 pl-1.5 pr-2 flex items-center justify-between hover:bg-gray-50/80 transition ${rowBg}" data-item-swipe-foreground data-swipe-offset="0" onpointerdown="startItemSwipe('${item.id}', event)">
-                        <div class="drag-handle shrink-0 mr-1 w-7 h-10 flex items-center justify-center text-gray-400 hover:text-[#3F8CB8] active:text-[#3F8CB8] cursor-grab active:cursor-grabbing touch-none select-none" title="Drag to reorder" onpointerdown="startItemDrag('${item.id}', event)">
+                    <div class="relative p-3 flex items-center justify-between hover:bg-gray-50/80 transition ${rowBg}" data-item-swipe-foreground data-swipe-offset="0" onpointerdown="startItemSwipe('${item.id}', event)">
+                        <div class="drag-handle shrink-0 mr-4 w-8 h-10 flex items-center justify-center text-gray-400 hover:text-[#3F8CB8] active:text-[#3F8CB8] cursor-grab active:cursor-grabbing touch-none select-none" title="Drag to reorder" onpointerdown="startItemDrag('${item.id}', event)">
                             <i class="fa-solid fa-grip-vertical text-sm"></i>
                         </div>
-                        <div class="flex items-center space-x-2.5 flex-1 min-w-0 cursor-pointer" onclick="playItem('${item.id}')">
+                        <div class="flex items-center space-x-3 flex-1 min-w-0 cursor-pointer" onclick="playItem('${item.id}')">
                             <input type="checkbox" ${isChecked ? 'checked' : ''} onclick="toggleItemSelection('${item.id}', event)" class="w-4 h-4 accent-[#3F8CB8] rounded cursor-pointer shrink-0">
-                            <div class="w-11 h-11 rounded-lg bg-gray-100 overflow-hidden shrink-0 shadow-sm flex items-center justify-center">
+                            <div class="w-12 h-12 rounded-xl bg-gray-100 overflow-hidden shrink-0 shadow-sm flex items-center justify-center">
                                 ${item.cover ? `<img src="${item.cover}" class="w-full h-full object-cover">` : '<i class="fa-solid fa-music text-gray-400"></i>'}
                             </div>
                             <div class="min-w-0 flex-1">
-                                <h4 class="text-sm font-bold text-[#1B3F57] truncate">${item.title}</h4>
-                                <p class="text-xs text-gray-600 truncate">${item.author || 'Unknown Author'}${item.subTracks && item.subTracks.length > 0 ? ` • ${item.subTracks.length} tracks` : ''}</p>
+                                <h4 class="text-xs font-bold text-[#1B3F57] truncate">${item.title}</h4>
+                                <p class="text-[11px] text-gray-600 truncate">${item.author || 'Unknown Author'}${item.subTracks && item.subTracks.length > 0 ? ` • ${item.subTracks.length} tracks` : ''}</p>
                                 <div class="flex items-center space-x-2 mt-1">
                                     <div class="flex-1 bg-gray-200 h-1.5 rounded-full overflow-hidden max-w-[180px]">
                                         <div class="bg-[#3F8CB8] h-full" style="width: ${pct}%"></div>
@@ -2968,9 +2968,9 @@
                                 ${tagsHtml ? `<div class="flex flex-wrap gap-1 mt-1.5">${tagsHtml}</div>` : ''}
                             </div>
                         </div>
-                        <div class="flex items-center ml-1 shrink-0">
-                            <button onclick="addToQueue('${item.id}', event)" class="w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Add to Queue"><i class="fa-solid fa-list-ol text-xs"></i></button>
-                            <button onclick="openEditModal('${item.id}')" class="w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Edit"><i class="fa-solid fa-ellipsis-vertical text-xs"></i></button>
+                        <div class="flex items-center space-x-1 ml-2">
+                            <button onclick="addToQueue('${item.id}', event)" class="w-[37px] h-[37px] rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Add to Queue"><i class="fa-solid fa-list-ol text-xs"></i></button>
+                            <button onclick="openEditModal('${item.id}')" class="w-[37px] h-[37px] rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-500 cursor-pointer" title="Edit"><i class="fa-solid fa-ellipsis-vertical text-xs"></i></button>
                         </div>
                     </div>
                 </div>
