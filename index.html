@@ -121,33 +121,38 @@
 
     <!-- Header -->
     <header class="bg-[#1B3F57] text-white px-4 py-3 flex items-center justify-between shadow-md shrink-0 pt-safe z-30">
-        <div class="flex items-center space-x-3">
-            <div id="header-app-icon" class="w-10 h-10 rounded-xl bg-[#FFDDA6] flex items-center justify-center shadow-inner overflow-hidden border-2 border-white/25 relative">
+        <!-- min-w-0 lets this side shrink (and its text truncate) instead of
+             shoving the button group past the right edge of the screen. -->
+        <div class="flex items-center gap-2.5 flex-1 min-w-0">
+            <div id="header-app-icon" class="hidden min-[360px]:flex shrink-0 w-10 h-10 rounded-xl bg-[#FFDDA6] items-center justify-center shadow-inner overflow-hidden border-2 border-white/25 relative">
                 <!-- Same logo used for the favicon and the mobile home-screen
                      icon (icon.svg / manifest.json) - previously this was a
                      separate, cruder hand-drawn puppy that didn't match. -->
                 <img src="icon.svg" alt="IndyBooks logo" class="w-full h-full object-cover">
             </div>
-            <div>
-                <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
-                    IndyBooks
-                    <span id="sync-status-badge" class="text-[11.5px] bg-[#FF7BAC] text-white px-1.5 py-0.5 rounded-full font-medium">Local</span>
-                </h1>
-                <p id="user-status-subtitle" class="text-xs text-[#FFDDA6]">Podcast & Audiobook Hub</p>
+            <div class="min-w-0">
+                <h1 class="text-lg font-bold tracking-tight text-white truncate">IndyBooks</h1>
+                <!-- The sync badge sits on the subtitle line rather than next to
+                     the title: title + badge + four header buttons didn't fit
+                     side by side on any phone narrower than ~420px. -->
+                <div class="flex items-center gap-1.5 min-w-0">
+                    <span id="sync-status-badge" class="shrink-0 text-[11.5px] bg-[#FF7BAC] text-white px-1.5 py-0.5 rounded-full font-medium">Local</span>
+                    <p id="user-status-subtitle" class="text-xs text-[#FFDDA6] truncate min-w-0">Podcast & Audiobook Hub</p>
+                </div>
             </div>
         </div>
-        <div class="flex items-center space-x-2">
-            <button onclick="openQueueModal()" class="w-[41px] h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer relative" title="Play Queue">
+        <div class="flex items-center gap-1.5 min-[400px]:gap-2 shrink-0 ml-2">
+            <button onclick="openQueueModal()" class="w-[38px] h-[38px] min-[400px]:w-[41px] min-[400px]:h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer relative" title="Play Queue">
                 <i class="fa-solid fa-list-ol text-sm"></i>
                 <span id="queue-count-badge" class="hidden absolute -top-1 -right-1 bg-[#FF7BAC] text-white text-[10.5px] w-4 h-4 rounded-full flex items-center justify-center">0</span>
             </button>
-            <button onclick="openSearchModal()" class="w-[41px] h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Search">
+            <button onclick="openSearchModal()" class="w-[38px] h-[38px] min-[400px]:w-[41px] min-[400px]:h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Search">
                 <i class="fa-solid fa-search text-sm"></i>
             </button>
-            <button onclick="openAuthModal()" id="auth-header-btn" class="w-[41px] h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Supabase Cloud Account">
+            <button onclick="openAuthModal()" id="auth-header-btn" class="w-[38px] h-[38px] min-[400px]:w-[41px] min-[400px]:h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Supabase Cloud Account">
                 <i class="fa-solid fa-cloud text-sm"></i>
             </button>
-            <button onclick="openSettingsModal()" class="w-[41px] h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Settings">
+            <button onclick="openSettingsModal()" class="w-[38px] h-[38px] min-[400px]:w-[41px] min-[400px]:h-[41px] rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition cursor-pointer" title="Settings">
                 <i class="fa-solid fa-gear text-sm"></i>
             </button>
         </div>
@@ -219,7 +224,7 @@
                 </div>
             </div>
 
-            <div class="flex items-center space-x-3 ml-3">
+            <div class="flex items-center gap-2 min-[400px]:gap-3 ml-3 shrink-0">
                 <button id="sloth-mode-btn" onclick="toggleSlothMode()" title="Sloth Mode (0.5x Speed)" class="w-[41px] h-[41px] rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center transition cursor-pointer overflow-hidden">
                     <img src="sloth-icon.png" alt="Sloth Mode" class="w-8 h-8 object-contain">
                 </button>
@@ -240,7 +245,11 @@
     <audio id="main-audio-element" ontimeupdate="onAudioTimeUpdate()" onended="onAudioEnded()" onloadedmetadata="onAudioMetadataLoaded()"></audio>
 
     <!-- Full Player Modal -->
-    <div id="player-modal" class="fixed inset-0 bg-[#1B3F57] z-50 flex flex-col text-white transform translate-y-full transition-transform duration-300">
+    <!-- invisible while closed: parked just below the screen, the bookmark
+         count badge (which pokes 4px above its button) otherwise peeked up
+         over the mini player's bottom-right corner. Visibility is part of
+         the transition so it only flips to hidden once the slide-down ends. -->
+    <div id="player-modal" class="fixed inset-0 bg-[#1B3F57] z-50 flex flex-col text-white transform translate-y-full invisible transition-[translate,visibility] duration-300">
         <div class="px-4 py-4 flex items-center justify-between border-b border-white/10 pt-safe">
             <button onclick="closePlayerModal()" class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center text-white cursor-pointer">
                 <i class="fa-solid fa-chevron-down"></i>
@@ -255,8 +264,13 @@
             </button>
         </div>
 
-        <div class="flex-1 overflow-y-auto px-6 py-6 flex flex-col items-center justify-center space-y-6">
-            <div id="modal-cover-container" class="w-64 h-64 rounded-2xl bg-[#3F8CB8] shadow-2xl overflow-hidden flex items-center justify-center border-4 border-white/10 relative group">
+        <!-- justify-center on a scrolling flex column pushes overflowing
+             content above the scroll origin, where it can never be scrolled
+             to - so the content is centred with my-auto on an inner wrapper
+             instead, which falls back to top-aligned when it doesn't fit. -->
+        <div class="flex-1 overflow-y-auto px-4 min-[400px]:px-6 py-6 flex flex-col">
+          <div class="my-auto shrink-0 w-full flex flex-col items-center space-y-6">
+            <div id="modal-cover-container" class="shrink-0 w-[min(16rem,70vw,34dvh)] h-[min(16rem,70vw,34dvh)] rounded-2xl bg-[#3F8CB8] shadow-2xl overflow-hidden flex items-center justify-center border-4 border-white/10 relative group">
                 <i class="fa-solid fa-headphones text-6xl text-[#FFDDA6]"></i>
             </div>
 
@@ -278,9 +292,9 @@
                 </div>
             </div>
 
-            <div class="flex items-center justify-center space-x-6 w-full max-w-md">
-                <button onclick="toggleSlothMode()" id="modal-sloth-btn" class="flex flex-col items-center text-xs text-[#FFDDA6] hover:text-white transition cursor-pointer">
-                    <div id="modal-sloth-icon-circle" class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center mb-1 overflow-hidden transition">
+            <div class="flex items-start justify-between w-full max-w-[400px]">
+                <button onclick="toggleSlothMode()" id="modal-sloth-btn" class="flex flex-col items-center text-[11.5px] leading-tight text-[#FFDDA6] hover:text-white transition cursor-pointer">
+                    <div id="modal-sloth-icon-circle" class="shrink-0 w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center mb-1 overflow-hidden transition">
                         <img src="sloth-icon.png" alt="Sloth Mode" class="w-9 h-9 object-contain">
                     </div>
                     Sloth Mode
@@ -291,7 +305,7 @@
                     </div>
                     <span id="skip-backward-label" class="text-[10.5px] text-[#FFDDA6]">15s</span>
                 </button>
-                <button id="modal-play-btn" onclick="togglePlayPause()" class="w-[74px] h-[74px] rounded-full bg-[#FFB452] text-[#1B3F57] flex items-center justify-center shadow-xl hover:scale-105 transition text-xl cursor-pointer">
+                <button id="modal-play-btn" onclick="togglePlayPause()" class="shrink-0 w-[74px] h-[74px] rounded-full bg-[#FFB452] text-[#1B3F57] flex items-center justify-center shadow-xl hover:scale-105 transition text-xl cursor-pointer">
                     <i class="fa-solid fa-play ml-1"></i>
                 </button>
                 <button onclick="skipTime(appState.skipForwardSeconds)" class="flex flex-col items-center gap-1 text-white cursor-pointer">
@@ -300,7 +314,7 @@
                     </div>
                     <span id="skip-forward-label" class="text-[10.5px] text-[#FFDDA6]">30s</span>
                 </button>
-                <button onclick="addBookmark()" class="flex flex-col items-center text-xs text-[#FFDDA6] hover:text-white transition cursor-pointer">
+                <button onclick="addBookmark()" class="flex flex-col items-center text-[11.5px] leading-tight text-[#FFDDA6] hover:text-white transition cursor-pointer">
                     <div class="w-[46px] h-[46px] rounded-full bg-white/10 flex items-center justify-center text-[#FFB452] mb-1">
                         <i class="fa-solid fa-bookmark"></i>
                     </div>
@@ -309,7 +323,7 @@
             </div>
 
             <!-- Speed / Sleep Timer Controls -->
-            <div class="flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-md pt-2">
+            <div class="flex flex-wrap items-center justify-center gap-3 w-full max-w-md pt-2">
                 <div class="bg-white/10 rounded-xl px-4 py-2 flex items-center gap-3">
                     <span class="text-xs text-[#FFDDA6]">Speed:</span>
                     <button onclick="adjustSpeed(-0.1)" class="w-8 h-8 rounded-lg bg-white/10 text-white font-bold hover:bg-white/20 cursor-pointer">-</button>
@@ -321,12 +335,13 @@
                     <span id="sleep-timer-label">Sleep Timer</span>
                 </button>
             </div>
+          </div>
         </div>
     </div>
 
     <!-- Bulk Edit Modal -->
     <div id="bulk-edit-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center">
                 <h3 class="text-lg font-bold text-[#1B3F57]">Bulk Update Selected Items</h3>
                 <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
@@ -362,7 +377,7 @@
 
     <!-- Supabase Auth Modal -->
     <div id="auth-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center">
                 <h3 class="text-lg font-bold text-[#1B3F57]">Supabase Cloud Sync</h3>
                 <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
@@ -411,7 +426,7 @@
 
     <!-- Goodreads Integration Modal -->
     <div id="goodreads-modal" class="fixed inset-0 bg-black/60 z-[70] hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 relative">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 relative max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center">
                 <h3 class="text-lg font-bold text-[#1B3F57]">Goodreads Account Integration</h3>
                 <button onclick="closeGoodreadsModal()" class="text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
@@ -443,7 +458,7 @@
 
     <!-- Add RSS Feed Modal -->
     <div id="add-feed-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center">
                 <h3 class="text-lg font-bold text-[#1B3F57]">Add Podcast RSS Feed</h3>
                 <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
@@ -461,7 +476,7 @@
 
     <!-- Add Direct Audio URL Modal -->
     <div id="add-url-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center">
                 <h3 class="text-lg font-bold text-[#1B3F57]">Add Audio File from URL</h3>
                 <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
@@ -601,7 +616,7 @@
 
     <!-- Sleep Timer Modal -->
     <div id="sleep-timer-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl space-y-4 text-center">
+        <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl space-y-4 text-center max-h-[90vh] overflow-y-auto">
             <h3 class="text-lg font-bold text-[#1B3F57]">Sleep Timer</h3>
             <div class="grid grid-cols-2 gap-2">
                 <button onclick="setSleepTimer(10)" class="p-3 bg-gray-100 hover:bg-[#FFDDA6] rounded-xl text-sm font-semibold text-[#1B3F57] cursor-pointer">10 Minutes</button>
@@ -661,7 +676,7 @@
 
     <!-- Settings Modal -->
     <div id="settings-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center">
                 <h3 class="text-lg font-bold text-[#1B3F57]">App Settings</h3>
                 <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
@@ -716,7 +731,7 @@
 
     <!-- Search & Tags Modal -->
     <div id="search-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center">
                 <h3 class="text-lg font-bold text-[#1B3F57]">Search & Tags</h3>
                 <button onclick="closeModals()" class="text-gray-400 hover:text-gray-600 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
@@ -1120,13 +1135,13 @@
                 loggedView.classList.remove('hidden');
                 document.getElementById('auth-user-email').innerText = currentUser.email;
                 badge.innerText = 'Synced';
-                badge.className = 'text-[11.5px] bg-green-600 text-white px-1.5 py-0.5 rounded-full font-medium';
+                badge.className = 'shrink-0 text-[11.5px] bg-green-600 text-white px-1.5 py-0.5 rounded-full font-medium';
                 sub.innerText = `Cloud Account: ${currentUser.email}`;
             } else {
                 unloggedView.classList.remove('hidden');
                 loggedView.classList.add('hidden');
                 badge.innerText = 'Local';
-                badge.className = 'text-[11.5px] bg-[#FF7BAC] text-white px-1.5 py-0.5 rounded-full font-medium';
+                badge.className = 'shrink-0 text-[11.5px] bg-[#FF7BAC] text-white px-1.5 py-0.5 rounded-full font-medium';
                 sub.innerText = 'Podcast & Audiobook Hub';
             }
         }
@@ -5253,8 +5268,14 @@
             }
         }
 
-        function openPlayerModal() { document.getElementById('player-modal').classList.remove('translate-y-full'); }
-        function closePlayerModal() { document.getElementById('player-modal').classList.add('translate-y-full'); }
+        function openPlayerModal() {
+            const modal = document.getElementById('player-modal');
+            // Always open at the top (cover art first) - on a short screen the
+            // player scrolls, and it otherwise reopened wherever it was left.
+            modal.children[1].scrollTop = 0;
+            modal.classList.remove('translate-y-full', 'invisible');
+        }
+        function closePlayerModal() { document.getElementById('player-modal').classList.add('translate-y-full', 'invisible'); }
         function openAuthModal() {
             // Sign-in fields are a one-time-entry form, not a setting - left
             // filled in, a typed password sits there indefinitely (worse on
